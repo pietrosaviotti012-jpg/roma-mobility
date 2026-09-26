@@ -81,6 +81,38 @@
           <h2 id="route-title" class="sr-only">Percorso scelto</h2>
           <ol id="route-steps" class="route-steps"></ol>
         </section>
+        <section id="live" class="live" aria-label="Indicazioni passo passo" hidden>
+          <div id="live-card" class="live-card" aria-live="polite">
+            <div class="live-top">
+              <span id="live-icon" class="live-icon" aria-hidden="true"></span>
+              <div class="live-text">
+                <p id="live-title" class="live-title"></p>
+                <p id="live-sub" class="live-sub"></p>
+              </div>
+              <div id="live-when" class="live-when"></div>
+            </div>
+            <div class="live-nav">
+              <button id="live-prev" type="button" class="live-arrow" aria-label="Indicazione precedente"></button>
+              <span id="live-count" class="live-count"></span>
+              <button id="live-next" type="button" class="live-arrow" aria-label="Indicazione successiva"></button>
+            </div>
+          </div>
+          <div class="live-bottom">
+            <div id="live-hint" class="live-hint" hidden>
+              <p>Vuoi gli avvisi anche con lo schermo spento?</p>
+              <button id="live-hint-open" type="button" class="text-button">Attivali</button>
+              <button id="live-hint-close" type="button" class="icon-button" aria-label="Chiudi">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" /></svg>
+              </button>
+            </div>
+            <ol id="live-list" class="live-list" hidden></ol>
+            <div id="live-bar" class="live-bar">
+              <div class="live-eta"><strong id="live-eta"></strong><span id="live-left"></span></div>
+              <button id="live-steps-btn" type="button" class="pill-button" aria-expanded="false" aria-controls="live-list">Tappe</button>
+              <button id="live-stop" type="button" class="pill-button live-stop">Termina</button>
+            </div>
+          </div>
+        </section>
         <button id="btn-gps" class="fab" type="button" aria-label="Centra sulla mia posizione">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <circle cx="12" cy="12" r="4" />
@@ -144,6 +176,31 @@
             Sulla mappa tocca «Dove vuoi andare?», scegli la meta e l’app ti propone i modi per arrivarci con
             bus, tram, metro e treni regionali, più le alternative a piedi e in bici. I bus COTRAL non ci sono:
             il loro calendario pubblico non è aggiornato.
+          </p>
+          <p class="card-sub">
+            Scelto il percorso, tocca «Avvia»: in alto vedi cosa fare adesso (dove camminare, quale mezzo aspettare,
+            quante fermate mancano) e l’indicazione va avanti da sola mentre ti muovi.
+          </p>
+        </section>
+
+        <section class="card" id="alerts-card">
+          <h3>Avvisi con lo schermo spento</h3>
+          <p class="card-sub">
+            Mentre segui un percorso, il telefono ti avvisa quando sta per passare il mezzo e quando devi scendere,
+            anche con lo schermo spento. Su iPhone un sito non può farlo da solo: gli avvisi passano da ntfy,
+            un’app gratuita e senza account.
+          </p>
+          <ol class="alerts-steps">
+            <li>Scarica <a href="https://apps.apple.com/app/ntfy/id1625396347" target="_blank" rel="noopener">ntfy dall’App Store</a> e consenti le notifiche.</li>
+            <li>In ntfy tocca <strong>+</strong> e scrivi il nome del tuo canale:
+              <span class="alerts-topic"><code id="alerts-topic"></code><button id="alerts-copy" type="button" class="text-button">Copia</button></span></li>
+            <li>Qui sotto scegli «Accesi» e manda una prova.</li>
+          </ol>
+          <div class="options" id="opt-alerts"></div>
+          <button id="alerts-test" type="button" class="pill-button alerts-test">Manda un avviso di prova</button>
+          <p class="card-note">
+            Il nome del canale è casuale: tienilo per te, perché chi lo conosce può leggere gli avvisi
+            (contengono solo fermate e orari del viaggio).
           </p>
         </section>
 
@@ -350,7 +407,7 @@
         <h2 id="time-title">Quando vuoi viaggiare?</h2>
         <div class="chips" id="time-mode">
           <button type="button" class="chip is-on" data-mode="now">Partendo ora</button>
-          <button type="button" class="chip" data-mode="depart">Parti alle</button>
+          <button type="button" class="chip" data-mode="depart">Parti</button>
           <button type="button" class="chip" data-mode="arrive">Arriva entro</button>
         </div>
         <div class="wheel time-wheel" id="time-field" hidden>

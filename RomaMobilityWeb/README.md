@@ -53,6 +53,32 @@ salvati con la stella in alto a destra in *Pianifica un viaggio*. Dalla scheda d
 **Ottieni indicazioni** calcola il percorso dalla tua posizione fino a li'. Le durate oltre l'ora si
 leggono "1 h 12 min".
 
+**Indirizzi con il civico.** Il geocoder di Transitous mette spesso in cima risultati sbagliati
+("via casilina 700" -> Via Casilina km 71,700 a Ferentino; "via di boccea 200" -> Via di Casal Boccone 208).
+L'app riordina i risultati: via giusta, civico uguale o vicino (segnato *Civico piu' vicino al ...*),
+distanza da te; i civici "km" solo se li scrivi tu. Se OpenStreetMap non conosce il civico, porta sulla
+via giusta (*Civico N non trovato: ti porto sulla via*) invece che su un'altra via.
+
+**Piu' percorsi.** Di serie Transitous guarda solo 15 minuti di partenze (`searchWindow=900`) e 15
+minuti a piedi all'inizio e alla fine: l'app chiede un'ora di partenze e fino a 30 minuti a piedi
+(da 8 a 15-28 percorsi per le stesse mete). Se la prima pagina e' vuota prova da sola la successiva.
+
+## Navigazione attiva (Avvia)
+
+Nel riepilogo di un percorso c'e' **Avvia**: in alto un riquadro con cosa fare adesso (cammina fino a,
+aspetta il bus, scendi a... con i minuti, i metri o le fermate che mancano), frecce per scorrere i
+passi, sotto l'orario di arrivo, **Tappe** e **Termina**. Il passo va avanti da solo con la posizione
+(arrivato al punto, allontanato dalla fermata dopo la partenza) o, senza posizione, con l'orario.
+Lo schermo resta acceso (Wake Lock). Se iOS chiude l'app, riaprendola il viaggio riprende.
+
+**Avvisi a schermo spento.** Su iPhone una pagina web a schermo spento e' congelata e non puo'
+mandare notifiche da sola; le notifiche web vere richiederebbero un server (su Netlify costerebbe
+crediti ogni minuto e un deploy da GitHub). Per questo gli avvisi passano da **ntfy.sh**, gratuito e
+senza account: all'avvio l'app programma sul canale personale (nome casuale, in Impostazioni) gli
+avvisi con l'ora giusta (`delay`), e l'app **ntfy** li mostra: mezzo in arrivo tra 3 minuti,
+"scendi alla prossima" quando il mezzo lascia la penultima fermata, "scendi ora" con il passo dopo.
+**Termina** li cancella (`DELETE /canale/id`). Chi conosce il nome del canale puo' leggerli.
+
 I percorsi li calcola **Transitous** (`api.transitous.org`), servizio pubblico e gratuito basato su
 MOTIS, direttamente dal telefono: nessun server nostro. Copre ATAC (bus, tram, metro, con tempo
 reale) e i treni regionali Trenitalia; **i bus COTRAL mancano** per lo stesso motivo del resto
@@ -97,7 +123,7 @@ ogni volta che riapri l'app e ogni mezz'ora mentre e' aperta.
 Ogni volta che pubblichi:
 
 1. in `app.js` cambia `APP_VERSION` e scrivi la novita' in `APP_NEWS`;
-2. in `sw.js` alza `CACHE_VERSION` (ora e' `v24`).
+2. in `sw.js` alza `CACHE_VERSION` (ora e' `v25`).
 
 **Unica eccezione:** il colore della barra dell'orologio iOS lo legge solo quando aggiungi il sito
 alla schermata Home. Con questa versione la barra e' cambiata, quindi l'icona va tolta e rimessa

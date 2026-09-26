@@ -38,8 +38,8 @@ const STORAGE = {
 };
 
 // Cambia a ogni pubblicazione: chi apre l'app dopo un aggiornamento vede cosa c'e' di nuovo.
-const APP_VERSION = "2026.09.26-5";
-const APP_NEWS = "Casa, Lavoro e i tuoi posti preferiti in «Dove vuoi andare?», tragitti da salvare con la stella, suggerimenti mentre scrivi, il giorno nell’orario e «Ottieni indicazioni» dalle fermate.";
+const APP_VERSION = "2026.09.26-6";
+const APP_NEWS = "Nuovo tasto «Avvia»: indicazioni passo passo sulla mappa e avvisi anche a schermo spento (vedi Impostazioni). Indirizzi con il numero civico trovati meglio e molti più percorsi.";
 
 /* ------------------------------------------------------------------ *
  * Utilita'
@@ -183,21 +183,24 @@ function prettyWord(word, index) {
   if (!word) return word;
   const upper = word.toUpperCase();
   if (KEEP_UPPERCASE.has(upper)) return upper;
-  if (/^[IVXLCDM]+$/.test(upper) && upper.length > 1) return upper;
   const lower = word.toLowerCase();
+  // Prima le preposizioni: "DI" sembrerebbe anche un numero romano (501).
   if (index > 0 && LOWERCASE_WORDS.has(lower)) return lower;
+  if (/^[IVXLCDM]+$/.test(upper) && upper.length > 1 && !LOWERCASE_WORDS.has(lower)) return upper;
   return lower.charAt(0).toUpperCase() + lower.slice(1);
 }
 
 function prettyName(value) {
   const text = String(value || "").trim();
   if (!text) return "";
-  // Se chi pubblica i dati ha gia' scritto in minuscolo, non si tocca niente.
-  if (text !== text.toUpperCase()) return text;
   let index = 0;
-  return text
-    .replace(/[^\s\/\-.,()]+/g, (word) => prettyWord(word, index++))
-    .replace(/\b(P|L|V|C|Pz)\.(Za|Zza|Go|Le|So)\b/g, (match, first, second) => first + "." + second.toLowerCase());
+  // Se chi pubblica i dati ha gia' scritto in minuscolo si sistemano solo le preposizioni rimaste
+  // maiuscole ("Arco DI Travertino"); altrimenti si riscrive tutto parola per parola.
+  const words = text !== text.toUpperCase()
+    ? text.replace(/(\s)(DI|DEL|DELLA|DELLO|DEI|DEGLI|DELLE|DA|DAL|DALLA|E|IN)(?=\s)/g, (match, space, word) => space + word.toLowerCase())
+    : text.replace(/[^\s\/\-.,()]+/g, (word) => prettyWord(word, index++));
+  // Abbreviazioni: "P.za", "L.go", "Staz.ne", "Osp.le" (non "Staz.Ne").
+  return words.replace(/\b([A-Z][a-z]*)\.(Za|Zza|Go|Le|So|Ne|Lo|Li|Ni)\b/g, (match, first, second) => first + "." + second.toLowerCase());
 }
 
 // I file COTRAL scrivono "COMUNE | Luogo": sullo schermo e' piu' naturale "Luogo, Comune".
@@ -2288,33 +2291,116 @@ function renderSearchHome() {
   if (addButton) addButton.addEventListener("click", () => startSettingSlot("place"));
 }
 
-async function geocode(text) {
-  const key = text.toLowerCase();
-  if (geocodeCache.has(key)) return geocodeCache.get(key);
+// Campidoglio: da qui parte la numerazione delle vie consolari.
+const ROME_CENTER = { lat: 41.8933, lon: 12.4829 };
+
+// Parole che non distinguono una via dall'altra ("via", "di", "della"...).
+const STREET_FILLERS = new Set([
+  "via", "viale", "v", "piazza", "piazzale", "p", "largo", "corso", "vicolo", "lungotevere", "circonvallazione",
+  "borgo", "strada", "di", "del", "della", "dello", "dei", "degli", "delle", "de", "d", "da", "n", "numero", "civico",
+]);
+
+function streetWords(text) {
+  return normalizeText(text).split(" ").filter((word) => word && !STREET_FILLERS.has(word));
+}
+
+// "Via Prenestina 300", "via prenestina, 300", "via prenestina n. 300/b" -> via + numero civico.
+function parseAddress(text) {
+  const match = normalizeText(text).match(/^(.*?[a-z].*?)\s+(?:n\s+)?(\d{1,4})(?:\s+[a-z])?(?:\s+\d+)?$/);
+  if (!match || !streetWords(match[1]).length) return null;
+  return { street: match[1], number: Number(match[2]) };
+}
+
+function areaTown(item) {
+  // Aree dal piu' grande al piu' piccolo: Italia / Lazio / Roma (provincia) / Genazzano, oppure
+  // Italia / Lazio / Roma / Roma / Municipio Roma V. Il comune e' l'ultima prima dei municipi.
+  const areas = (item.areas || []).map((area) => area.name).filter((name) => name && !/^Municipio/i.test(name));
+  return areas.length > 2 ? areas[areas.length - 1] : areas.find((name) => name !== "Italia" && name !== "Lazio") || "";
+}
+
+// Il servizio mette spesso in cima civici sbagliati (Via Casilina km 71,700 a Ferentino per "via casilina 700",
+// Via di Casal Boccone 208 per "via di boccea 200"): si riordina guardando via giusta, civico e distanza.
+function rankGeocode(items, text) {
+  const address = parseAddress(text);
+  const typed = streetWords(address ? address.street : text);
   const near = referencePoint();
-  const url = TRANSITOUS + "/v1/geocode?text=" + encodeURIComponent(text) + "&place=" + near.lat.toFixed(4) + "," + near.lon.toFixed(4) + "&language=it";
+  return items
+    .map((item, rank) => {
+      const words = streetWords(item.street || item.name);
+      const hits = typed.filter((word) => words.some((candidate) => candidate.startsWith(word))).length;
+      const extra = words.filter((candidate) => !typed.some((word) => candidate.startsWith(word))).length;
+      let score = -rank * 0.3;
+      if (typed.length) score += hits === typed.length ? 6 - Math.min(extra, 3) : hits * 1.5;
+      score -= Math.min(haversineMeters(near, item) / 1000, 80) / 10;
+      const result = { item, score, sameStreet: hits === typed.length && typed.length > 0, extra, exact: false, nearNumber: null };
+      if (address) {
+        const houseNumber = String(item.houseNumber || "");
+        if (/km/i.test(houseNumber)) result.score -= 6;
+        else if (houseNumber) {
+          const number = parseInt(houseNumber, 10);
+          if (number === address.number) {
+            result.score += 4;
+            result.exact = true;
+          } else if (Math.abs(number - address.number) <= 12) {
+            result.score += 2.5;
+            result.nearNumber = number;
+          } else result.score -= 1;
+        } else if (item.type === "ADDRESS") result.score += 0.5;
+      }
+      return result;
+    })
+    .sort((a, b) => b.score - a.score);
+}
+
+async function geocodeRequest(text) {
+  const near = referencePoint();
+  const url = TRANSITOUS + "/v1/geocode?text=" + encodeURIComponent(text) + "&place=" + near.lat.toFixed(4) + "," + near.lon.toFixed(4) +
+    "&placeBias=5&numResults=20&language=it";
   const response = await fetch(url);
   if (!response.ok) throw new Error("ricerca non disponibile");
   const payload = await response.json();
-  const places = (Array.isArray(payload) ? payload : [])
+  return (Array.isArray(payload) ? payload : [])
     .filter((item) => Number.isFinite(item.lat) && Number.isFinite(item.lon))
     // Solo il Lazio: stesso riquadro della ricerca delle fermate.
-    .filter((item) => item.lat > 40.7 && item.lat < 43.0 && item.lon > 11.3 && item.lon < 14.1)
-    .map((item) => {
-      const areas = (item.areas || []).map((area) => area.name).filter(Boolean);
-      const town = areas.find((name) => name !== "Italia" && name !== "Lazio") || areas[0] || "";
-      const isStop = item.type === "STOP";
-      const local = isStop ? localStopFor(transitousStopId(item.id), ATAC_FEED) : null;
-      const street = item.street ? item.street + (item.houseNumber ? " " + item.houseNumber : "") : "";
-      return {
-        name: local ? local.name : prettyName(item.name),
-        sub: isStop ? (local ? stopSubtitle(local) : "Fermata") + (town ? ", " + town : "") : [street, town].filter(Boolean).join(", "),
-        lat: item.lat,
-        lon: item.lon,
-        kind: isStop ? "stop" : "place",
-        tone: local && local.mode === "MetroStation" ? stopTone(local) : isStop ? "tone-stop" : "",
-      };
-    });
+    .filter((item) => item.lat > 40.7 && item.lat < 43.0 && item.lon > 11.3 && item.lon < 14.1);
+}
+
+async function geocode(text) {
+  const key = text.toLowerCase();
+  if (geocodeCache.has(key)) return geocodeCache.get(key);
+  const address = parseAddress(text);
+  let ranked = rankGeocode(await geocodeRequest(text), text);
+
+  // Civico che OpenStreetMap non conosce: meglio portare sulla via giusta che su un'altra via.
+  let streetOnly = null;
+  if (address && !ranked.some((r) => r.sameStreet && (r.exact || r.nearNumber !== null))) {
+    const streets = rankGeocode(await geocodeRequest(address.street), address.street)
+      .filter((r) => r.sameStreet && r.extra === 0 && r.item.type === "ADDRESS" && !r.item.houseNumber);
+    // La numerazione parte dal lato verso il centro: per i civici bassi si sceglie quel tratto.
+    if (address.number <= 60) streets.sort((a, b) => haversineMeters(ROME_CENTER, a.item) - haversineMeters(ROME_CENTER, b.item));
+    streetOnly = streets[0] || null;
+    if (streetOnly) ranked = [streetOnly].concat(ranked);
+  }
+
+  const places = ranked.map((r) => {
+    const item = r.item;
+    const town = areaTown(item);
+    const isStop = item.type === "STOP";
+    const local = isStop ? localStopFor(transitousStopId(item.id), ATAC_FEED) : null;
+    let name = local ? local.name : prettyName(item.name);
+    let sub = isStop ? (local ? stopSubtitle(local) : "Fermata") + (town ? ", " + town : "") : town;
+    if (!isStop && item.street && item.houseNumber && item.name.indexOf(item.street) === -1) sub = [item.street + " " + item.houseNumber, town].filter(Boolean).join(", ");
+    if (address && r.nearNumber !== null && r.sameStreet && r.extra === 0) sub = "Civico più vicino al " + address.number + (town ? " · " + town : "");
+    if (r === streetOnly) sub = "Civico " + address.number + " non trovato: ti porto sulla via" + (town ? " · " + town : "");
+    return {
+      name,
+      sub,
+      lat: item.lat,
+      lon: item.lon,
+      kind: isStop ? "stop" : "place",
+      tone: local && local.mode === "MetroStation" ? stopTone(local) : isStop ? "tone-stop" : "",
+    };
+  });
   const unique = dedupePlaces(places).slice(0, 10);
   geocodeCache.set(key, unique);
   return unique;
@@ -2473,6 +2559,11 @@ async function planTrip(more) {
       numItineraries: "8",
       directModes: "WALK,BIKE",
       maxDirectTime: "5400",
+      // Di serie Transitous guarda solo 15 minuti di partenze e al massimo 15 minuti a piedi
+      // all’inizio e alla fine: troppo poco, molte mete restavano senza percorso.
+      searchWindow: "3600",
+      maxPreTransitTime: "1800",
+      maxPostTransitTime: "1800",
     });
     const time = timeParam();
     if (time) params.set("time", time);
@@ -2493,6 +2584,11 @@ async function planTrip(more) {
       });
     if (!more) nav.direct = payload.direct || [];
     nav.nextCursor = payload.nextPageCursor || null;
+    // Pagina vuota (per esempio di notte): si prova da sola la pagina dopo, una volta.
+    if (!nav.itineraries.length && nav.nextCursor && !more) {
+      planTrip(true);
+      return;
+    }
     renderPlan();
   } catch (error) {
     if (token !== nav.token) return;
@@ -2766,7 +2862,8 @@ function showItinerary(itinerary) {
   const minutes = Math.round(itinerary.duration / 60);
   $("#route-summary").innerHTML =
     '<div class="route-total"><strong>' + durationLabel(minutes) + "</strong><span>" + clockOf(itinerary.startTime) + " – " + clockOf(itinerary.endTime) +
-    "</span></div>" + (itinerary.legs.some(isTransit) ? legsHtml(itinerary) : "");
+    '</span><button type="button" id="route-start" class="start-button">' + ICON_PLAY + "Avvia</button></div>" +
+    (itinerary.legs.some(isTransit) ? legsHtml(itinerary) : "");
   renderSteps(itinerary);
   $("#route-sheet").hidden = false;
   $("#view-map").classList.add("has-route");
@@ -2944,6 +3041,615 @@ function wireNavigation() {
   sheet.addEventListener("touchcancel", unlockMap);
   sheet.addEventListener("pointerup", unlockMap);
   sheet.addEventListener("pointercancel", unlockMap);
+
+  wireLive();
+}
+
+
+/* ------------------------------------------------------------------ *
+ * Navigazione attiva ("Avvia"), come su Moovit: un riquadro con l'indicazione
+ * del momento sopra la mappa, che avanza da solo con la posizione e l'orario,
+ * e gli avvisi sul telefono anche a schermo spento.
+ *
+ * Su iPhone una pagina web a schermo spento viene congelata: non puo' mandare
+ * notifiche da sola. Gli avvisi quindi si programmano all'avvio su ntfy.sh
+ * (servizio gratuito e senza account) e li consegna l'app ntfy all'ora giusta.
+ * ------------------------------------------------------------------ */
+
+const NAV_LIVE_KEY = "roma-mobility-web/nav-live";
+const ALERTS_KEY = "roma-mobility-web/alerts";
+const NTFY = "https://ntfy.sh/";
+// Una posizione piu' vecchia di cosi' non dice piu' dove sei: si ragiona con l'orario.
+const FIX_FRESH_MS = 90000;
+
+const live = {
+  on: false,
+  itinerary: null,
+  destName: "",
+  steps: [],
+  index: 0,
+  pausedUntil: 0, // dopo le frecce l'avanzamento automatico aspetta un po'
+  watchId: null,
+  timer: null,
+  follow: true,
+  lastFocus: 0,
+  wakeLock: null,
+  fix: null,
+  topic: "",
+  alertIds: [],
+};
+
+const ICON_PLAY = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5Z"/></svg>';
+const ICON_PREV = '<svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="15 5 8 12 15 19"/></svg>';
+const ICON_NEXT = '<svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="9 5 16 12 9 19"/></svg>';
+
+function capitalize(text) {
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : text;
+}
+
+// "il bus 64", "la metro B", "il tram 8", "il treno FL1": come lo si direbbe a voce.
+function lineArticle(leg) {
+  const kind = legKind(leg);
+  const line = legLine(leg);
+  if (kind === "metro") return "la metro " + line.replace(/^M/, "");
+  if (kind === "tram") return "il tram " + line;
+  if (kind === "train") return line === "Treno" ? "il treno" : "il treno " + line;
+  return "il bus " + line;
+}
+
+/* ---------------- passi del viaggio ---------------- */
+
+function buildLiveSteps(itinerary, destName) {
+  const steps = [];
+  const legs = itinerary.legs;
+  legs.forEach((leg, index) => {
+    const start = Date.parse(leg.startTime);
+    const end = Date.parse(leg.endTime);
+    const next = legs[index + 1];
+    const last = index === legs.length - 1;
+
+    if (!isTransit(leg)) {
+      // Cambio sulla stessa banchina: non e' un passo da seguire.
+      if (index > 0 && !last && (leg.distance || 0) < 30 && (leg.duration || 0) < 90) return;
+      const bike = leg.mode === "BIKE";
+      const toName = last ? destName : placeLabel(leg.to, "la fermata");
+      steps.push({
+        kind: bike ? "bike" : "walk",
+        icon: bike ? ICON.bike : ICON.walk,
+        tone: "var(--scheduled)",
+        title: (bike ? "Pedala fino a " : "Cammina fino a ") + toName,
+        detail: durationLabel(Math.max(1, Math.round((leg.duration || 0) / 60))) + (leg.distance ? " · " + metersLabel(leg.distance) : "") +
+          (next && isTransit(next) ? " · poi " + lineArticle(next) : ""),
+        start,
+        end,
+        target: { lat: leg.to.lat, lon: leg.to.lon },
+        radius: last ? 40 : 35,
+      });
+      return;
+    }
+
+    const line = lineArticle(leg);
+    const fromName = placeLabel(leg.from, "la fermata");
+    const toName = placeLabel(leg.to, "la fermata");
+    const headsign = prettyName(leg.headsign || "");
+    const before = steps.length ? steps[steps.length - 1].end : start;
+    steps.push({
+      kind: "wait",
+      icon: ICON[legKind(leg)],
+      tone: legColor(leg),
+      chip: legChip(leg),
+      title: "Aspetta " + line,
+      detail: "",
+      start: Math.min(before, start),
+      end: start,
+      target: { lat: leg.from.lat, lon: leg.from.lon },
+      live: leg.realTime,
+      line,
+      fromName,
+      headsign,
+    });
+    const stops = (leg.intermediateStops || [])
+      .filter((stop) => stop.name && Number.isFinite(stop.lat))
+      .map((stop) => ({ name: placeLabel(stop, "Fermata"), lat: stop.lat, lon: stop.lon, time: Date.parse(stop.arrival || stop.departure) || 0 }));
+    stops.push({ name: toName, lat: leg.to.lat, lon: leg.to.lon, time: end });
+    steps.push({
+      kind: "ride",
+      icon: ICON[legKind(leg)],
+      tone: legColor(leg),
+      chip: legChip(leg),
+      title: "Scendi a " + toName,
+      detail: "",
+      start,
+      end,
+      target: { lat: leg.to.lat, lon: leg.to.lon },
+      radius: 80,
+      live: leg.realTime,
+      stops,
+      line,
+      fromName,
+      headsign,
+    });
+  });
+
+  const lastLeg = legs[legs.length - 1];
+  steps.push({
+    kind: "arrive",
+    icon: ICON.pin,
+    tone: "#e0572e",
+    title: "Sei arrivato",
+    detail: destName,
+    start: Date.parse(lastLeg.endTime),
+    end: Infinity,
+    target: { lat: lastLeg.to.lat, lon: lastLeg.to.lon },
+  });
+  return steps;
+}
+
+function freshFix() {
+  return live.fix && Date.now() - live.fix.at < FIX_FRESH_MS ? live.fix : null;
+}
+
+// Fermate che mancano, destinazione compresa: con la posizione se c'e', altrimenti con l'orario.
+function remainingStops(step, now) {
+  const total = step.stops.length;
+  const fix = freshFix();
+  if (fix) {
+    let nearest = -1;
+    let best = 250;
+    step.stops.forEach((stop, i) => {
+      const distance = haversineMeters(fix, stop);
+      if (distance < best) {
+        best = distance;
+        nearest = i;
+      }
+    });
+    if (nearest >= 0) return Math.max(0, total - nearest - 1);
+  }
+  const reached = step.stops.filter((stop) => stop.time && stop.time <= now).length;
+  return Math.max(0, total - reached);
+}
+
+function liveDetail(step, now) {
+  if (step.kind === "wait") {
+    return step.chip + " <span>A " + escapeHtml(step.fromName) + (step.headsign ? " · direzione " + escapeHtml(step.headsign) : "") +
+      " · parte alle " + clockOf(step.end) + "</span>";
+  }
+  if (step.kind === "ride") {
+    const left = remainingStops(step, now);
+    const text = left === 0 ? "Scendi adesso" : left === 1 ? "Scendi alla prossima fermata" : "Direzione " + step.headsign + " · arrivo alle " + clockOf(step.end);
+    return step.chip + " <span>" + escapeHtml(text) + "</span>";
+  }
+  return escapeHtml(step.detail);
+}
+
+// Il numero grande a destra: minuti all'arrivo del mezzo, metri che mancano, fermate che mancano.
+function liveWhen(step, now) {
+  const minutesTo = (time) => Math.ceil((time - now) / 60000);
+  if (step.kind === "wait") {
+    const minutes = minutesTo(step.end);
+    if (minutes <= 0) return { value: "ora", unit: "" };
+    return minutes < 60 ? { value: minutes, unit: "min" } : { value: clockOf(step.end), unit: "" };
+  }
+  if (step.kind === "ride") {
+    const left = remainingStops(step, now);
+    return { value: left, unit: left === 1 ? "fermata" : "fermate" };
+  }
+  if (step.kind === "walk" || step.kind === "bike") {
+    const fix = freshFix();
+    if (fix) {
+      const meters = haversineMeters(fix, step.target);
+      return meters >= 1000 ? { value: (meters / 1000).toFixed(1).replace(".", ","), unit: "km" } : { value: Math.max(0, Math.round(meters / 10) * 10), unit: "m" };
+    }
+    return { value: Math.max(0, minutesTo(step.end)), unit: "min" };
+  }
+  return { value: "", unit: "" };
+}
+
+/* ---------------- avanzamento ---------------- */
+
+function stepDone(step, now) {
+  const fix = freshFix();
+  const distance = fix && step.target ? haversineMeters(fix, step.target) : null;
+  if (step.kind === "walk" || step.kind === "bike") return fix ? distance <= step.radius : now >= step.end;
+  // Il mezzo e' partito: se ti sei allontanato dalla fermata ci sei salito (senza posizione, dopo un paio di minuti).
+  if (step.kind === "wait") return now >= step.end + 20000 && (!fix || distance > 100 || now >= step.end + 120000);
+  if (step.kind === "ride") return fix ? distance <= step.radius && now >= step.end - 180000 : now >= step.end;
+  return false;
+}
+
+function autoAdvance() {
+  if (!live.on || Date.now() < live.pausedUntil) return;
+  const now = Date.now();
+  let index = live.index;
+  while (index < live.steps.length - 1 && stepDone(live.steps[index], now)) index += 1;
+  if (index !== live.index) goToStep(index, false);
+}
+
+function goToStep(index, manual) {
+  const next = Math.max(0, Math.min(live.steps.length - 1, index));
+  const changed = next !== live.index;
+  live.index = next;
+  if (manual) live.pausedUntil = Date.now() + 45000;
+  saveLive();
+  renderLive();
+  if (changed || manual) {
+    live.follow = true;
+    focusStep();
+  }
+}
+
+/* ---------------- schermo ---------------- */
+
+function renderLive() {
+  if (!live.on) return;
+  const now = Date.now();
+  const step = live.steps[live.index];
+  $("#live-card").style.setProperty("--tone", step.tone);
+  $("#live-icon").innerHTML = step.icon;
+  $("#live-title").textContent = step.title;
+  $("#live-sub").innerHTML = liveDetail(step, now);
+  const when = liveWhen(step, now);
+  const whenBox = $("#live-when");
+  whenBox.innerHTML = when.value === "" ? "" : escapeHtml(String(when.value)) + (when.unit ? "<small>" + when.unit + "</small>" : "");
+  whenBox.classList.toggle("is-live", Boolean(step.live) && step.kind === "wait");
+  $("#live-count").textContent = "Passo " + (live.index + 1) + " di " + live.steps.length;
+  $("#live-prev").disabled = live.index === 0;
+  $("#live-next").disabled = live.index === live.steps.length - 1;
+
+  const arrival = live.steps[live.steps.length - 1].start;
+  const left = Math.round((arrival - now) / 60000);
+  $("#live-eta").textContent = step.kind === "arrive" ? "Sei arrivato" : "Arrivo alle " + clockOf(arrival);
+  $("#live-left").textContent = step.kind === "arrive" ? live.destName : left > 0 ? "tra " + durationLabel(left) : "tra poco";
+  if (!$("#live-list").hidden) renderLiveList();
+}
+
+function renderLiveList() {
+  $("#live-list").innerHTML = live.steps
+    .map((step, i) =>
+      '<li><button type="button" class="live-row' + (i === live.index ? " is-current" : i < live.index ? " is-done" : "") +
+      '" data-step="' + i + '" style="--tone:' + step.tone + '"><span class="live-row-icon">' + step.icon + "</span>" +
+      '<span class="live-row-text">' + escapeHtml(step.title) + "</span>" +
+      '<span class="live-row-time">' + clockOf(step.kind === "wait" ? step.end : step.start) + "</span></button></li>")
+    .join("");
+}
+
+// Inquadra quello che serve adesso: te e il prossimo punto, oppure le fermate che mancano.
+function focusStep() {
+  if (!live.on || !map) return;
+  const step = live.steps[live.index];
+  const fix = freshFix();
+  const points = step.kind === "ride"
+    ? step.stops.slice(Math.max(0, step.stops.length - remainingStops(step, Date.now()) - 1)).map((stop) => [stop.lat, stop.lon])
+    : [[step.target.lat, step.target.lon]];
+  if (fix) points.push([fix.lat, fix.lon]);
+  const box = $("#view-map").getBoundingClientRect();
+  const top = Math.max(20, $("#live-card").getBoundingClientRect().bottom - box.top + 16);
+  const bottom = Math.max(20, box.bottom - $("#live-bar").getBoundingClientRect().top + 16);
+  map.fitBounds(points, { paddingTopLeft: [28, top], paddingBottomRight: [28, bottom], maxZoom: 17 });
+  live.lastFocus = Date.now();
+}
+
+function onLiveFix(position) {
+  live.fix = { lat: position.coords.latitude, lon: position.coords.longitude, at: Date.now() };
+  showPosition(position.coords);
+  autoAdvance();
+  renderLive();
+  if (live.follow && Date.now() - live.lastFocus > 8000) focusStep();
+}
+
+function tickLive() {
+  autoAdvance();
+  renderLive();
+}
+
+async function keepAwake() {
+  // Schermo acceso mentre si seguono le indicazioni (iOS 16.4+; se non c'e', pazienza).
+  try {
+    if (live.on && "wakeLock" in navigator && document.visibilityState === "visible" && !live.wakeLock) {
+      live.wakeLock = await navigator.wakeLock.request("screen");
+      live.wakeLock.addEventListener("release", () => (live.wakeLock = null));
+    }
+  } catch (error) {
+    live.wakeLock = null;
+  }
+}
+
+function saveLive() {
+  if (!live.on) return;
+  writeStorage(NAV_LIVE_KEY, {
+    itinerary: live.itinerary,
+    from: nav.from,
+    to: nav.to,
+    index: live.index,
+    topic: live.topic,
+    alertIds: live.alertIds,
+  });
+}
+
+function startLive(itinerary, resume) {
+  if (!itinerary) return;
+  if (live.on) stopLive(false);
+  live.on = true;
+  live.itinerary = itinerary;
+  live.destName = pointText(nav.to) || "Arrivo";
+  live.steps = buildLiveSteps(itinerary, live.destName);
+  live.index = resume ? Math.min(resume.index || 0, live.steps.length - 1) : 0;
+  live.topic = resume ? resume.topic || "" : "";
+  live.alertIds = resume ? resume.alertIds || [] : [];
+  live.pausedUntil = 0;
+  live.follow = true;
+  nav.shown = itinerary;
+
+  closeNavPanel();
+  showView("map");
+  $("#route-sheet").hidden = true;
+  $("#view-map").classList.remove("has-route");
+  $("#view-map").classList.add("is-live");
+  $("#nav-open").hidden = true;
+  $("#map-hint").hidden = true;
+  $("#btn-gps").hidden = false;
+  $("#live").hidden = false;
+  $("#live-list").hidden = true;
+  $("#view-map").classList.remove("live-list-open");
+  $("#live-steps-btn").setAttribute("aria-expanded", "false");
+  document.body.classList.add("live-on");
+  refreshMarkers();
+
+  if (navigator.geolocation) {
+    live.watchId = navigator.geolocation.watchPosition(onLiveFix, () => {}, { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 });
+  }
+  live.timer = window.setInterval(tickLive, 5000);
+  keepAwake();
+  autoAdvance();
+  renderLive();
+  saveLive();
+  window.setTimeout(() => {
+    map.invalidateSize();
+    drawRoute(itinerary);
+    focusStep();
+  }, 60);
+
+  if (!resume) scheduleAlerts();
+  $("#live-hint").hidden = resume || readAlertSettings().on;
+}
+
+function stopLive(backToRoute) {
+  if (!live.on) return;
+  live.on = false;
+  window.clearInterval(live.timer);
+  if (live.watchId !== null && navigator.geolocation) navigator.geolocation.clearWatch(live.watchId);
+  live.watchId = null;
+  if (live.wakeLock) live.wakeLock.release().catch(() => {});
+  live.wakeLock = null;
+  cancelAlerts();
+  writeStorage(NAV_LIVE_KEY, null);
+  $("#live").hidden = true;
+  $("#view-map").classList.remove("is-live", "live-list-open");
+  document.body.classList.remove("live-on");
+  const arrival = live.steps.length ? live.steps[live.steps.length - 1].start : 0;
+  if (backToRoute && Date.now() < arrival) showItinerary(live.itinerary);
+  else clearRoute();
+}
+
+// Riaperta l'app durante un viaggio (iOS a volte la chiude a schermo spento): si riprende da dove eri.
+function resumeLive() {
+  const saved = readStorage(NAV_LIVE_KEY, null);
+  if (!saved || !saved.itinerary || !saved.itinerary.legs) return;
+  const legs = saved.itinerary.legs;
+  const arrival = Date.parse(legs[legs.length - 1].endTime);
+  if (Date.now() > arrival + 30 * 60000) {
+    writeStorage(NAV_LIVE_KEY, null);
+    return;
+  }
+  nav.from = saved.from || { here: true };
+  nav.to = saved.to || null;
+  startLive(saved.itinerary, saved);
+}
+
+/* ---------------- avvisi a schermo spento (ntfy) ---------------- */
+
+function randomId(length) {
+  const letters = "abcdefghijkmnpqrstuvwxyz23456789";
+  const bytes = crypto.getRandomValues(new Uint8Array(length));
+  return Array.from(bytes, (byte) => letters[byte % letters.length]).join("");
+}
+
+// Il canale e' un nome casuale: chi non lo conosce non puo' leggere gli avvisi.
+function readAlertSettings() {
+  let settings = readStorage(ALERTS_KEY, null);
+  if (!settings || !settings.topic) {
+    settings = { topic: "roma-mobility-" + randomId(16), on: false };
+    writeStorage(ALERTS_KEY, settings);
+  }
+  return settings;
+}
+
+function plannedAlerts(steps, destName) {
+  const alerts = [];
+  steps.forEach((step, i) => {
+    if (step.kind !== "ride") return;
+    const stopName = step.stops[step.stops.length - 1].name;
+    alerts.push({
+      at: step.start - 180000,
+      title: capitalize(step.line) + " passa tra 3 minuti",
+      message: "Alla fermata " + step.fromName + (step.headsign ? ", direzione " + step.headsign : "") + ". Parte alle " + clockOf(step.start) + ".",
+      priority: 4,
+    });
+    // Quando il mezzo lascia la penultima fermata, la prossima e' quella giusta.
+    const before = step.stops.length >= 2 ? step.stops[step.stops.length - 2] : null;
+    const prepareAt = before && before.time > step.start ? before.time : step.end - 120000;
+    if (prepareAt > step.start) {
+      alerts.push({ at: prepareAt, title: "Scendi alla prossima fermata", message: "La prossima è " + stopName + ": preparati a scendere.", priority: 5 });
+    }
+    const next = steps[i + 1];
+    let message = "Sei quasi arrivato.";
+    if (next && (next.kind === "walk" || next.kind === "bike")) message = next.title + " (" + next.detail + ").";
+    else if (next && next.kind === "wait" && steps[i + 2]) {
+      const ride = steps[i + 2];
+      message = "Ora prendi " + ride.line + ": parte alle " + clockOf(ride.start) + " da " + ride.fromName + ".";
+    } else if (next && next.kind === "arrive") message = "Sei arrivato a " + destName + ".";
+    alerts.push({ at: step.end, title: "Scendi ora: " + stopName, message, priority: 4 });
+  });
+
+  const first = steps[0];
+  if (first && (first.kind === "walk" || first.kind === "bike")) {
+    const ride = steps.find((step) => step.kind === "ride");
+    alerts.push({
+      at: first.start - 60000,
+      title: "È ora di partire",
+      message: first.title + (ride ? ": " + ride.line + " parte alle " + clockOf(ride.start) + "." : "."),
+      priority: 4,
+    });
+  }
+  const lastMove = steps[steps.length - 2];
+  if (lastMove && lastMove.kind !== "ride") {
+    alerts.push({ at: steps[steps.length - 1].start, title: "Sei arrivato", message: destName, priority: 3 });
+  }
+  return alerts.sort((a, b) => a.at - b.at);
+}
+
+async function publishAlert(topic, alert, id) {
+  const body = { topic, title: alert.title, message: alert.message, priority: alert.priority || 4, sequence_id: id };
+  if (alert.at) body.delay = String(Math.round(alert.at / 1000));
+  const response = await fetch(NTFY, { method: "POST", body: JSON.stringify(body) });
+  if (!response.ok) throw new Error("ntfy ha risposto " + response.status);
+}
+
+async function scheduleAlerts() {
+  const settings = readAlertSettings();
+  if (!settings.on) return;
+  // ntfy accetta avvisi programmati da 10 secondi in poi.
+  const alerts = plannedAlerts(live.steps, live.destName).filter((alert) => alert.at > Date.now() + 12000);
+  if (!alerts.length) return;
+  const trip = "rm" + Date.now().toString(36);
+  live.topic = settings.topic;
+  live.alertIds = [];
+  const results = await Promise.all(alerts.map(async (alert, i) => {
+    const id = trip + "-" + i;
+    try {
+      await publishAlert(settings.topic, alert, id);
+      live.alertIds.push(id);
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }));
+  saveLive();
+  const sent = results.filter(Boolean).length;
+  if (!live.on) return cancelAlerts();
+  toast(sent === alerts.length
+    ? "Avvisi pronti: te ne arriveranno " + sent + " durante il viaggio, anche a schermo spento."
+    : "Non sono riuscito a programmare tutti gli avvisi: segui le indicazioni nell’app.");
+}
+
+// Terminato il viaggio, gli avvisi non ancora arrivati si cancellano (e quelli arrivati spariscono da ntfy).
+function cancelAlerts() {
+  const topic = live.topic;
+  const ids = live.alertIds;
+  live.alertIds = [];
+  if (!topic) return;
+  ids.forEach((id) => fetch(NTFY + encodeURIComponent(topic) + "/" + encodeURIComponent(id), { method: "DELETE", keepalive: true }).catch(() => {}));
+}
+
+function renderAlertsCard() {
+  const settings = readAlertSettings();
+  $("#alerts-topic").textContent = settings.topic;
+  chipRow(
+    $("#opt-alerts"),
+    [
+      { value: "on", label: "Accesi" },
+      { value: "off", label: "Spenti" },
+    ],
+    (value) => (value === "on") === settings.on,
+    (value) => {
+      settings.on = value === "on";
+      writeStorage(ALERTS_KEY, settings);
+      renderAlertsCard();
+    },
+  );
+  $("#alerts-test").disabled = !settings.on;
+}
+
+/* ---------------- collegamenti ---------------- */
+
+function wireLive() {
+  renderAlertsCard();
+
+  // "Avvia" sta nel riepilogo del percorso, che si ridisegna a ogni percorso aperto.
+  $("#route-summary").addEventListener("click", (event) => {
+    if (event.target.closest("#route-start") && nav.shown) startLive(nav.shown, null);
+  });
+  $("#live-prev").innerHTML = ICON_PREV;
+  $("#live-next").innerHTML = ICON_NEXT;
+  $("#live-prev").addEventListener("click", () => goToStep(live.index - 1, true));
+  $("#live-next").addEventListener("click", () => goToStep(live.index + 1, true));
+  $("#live-stop").addEventListener("click", () => stopLive(true));
+  $("#live-steps-btn").addEventListener("click", () => {
+    const list = $("#live-list");
+    list.hidden = !list.hidden;
+    $("#view-map").classList.toggle("live-list-open", !list.hidden);
+    $("#live-steps-btn").setAttribute("aria-expanded", list.hidden ? "false" : "true");
+    if (!list.hidden) {
+      renderLiveList();
+      const current = list.querySelector(".is-current");
+      if (current) current.scrollIntoView({ block: "nearest" });
+    }
+  });
+  $("#live-list").addEventListener("click", (event) => {
+    const row = event.target.closest("[data-step]");
+    if (!row) return;
+    $("#live-list").hidden = true;
+    $("#view-map").classList.remove("live-list-open");
+    $("#live-steps-btn").setAttribute("aria-expanded", "false");
+    goToStep(Number(row.dataset.step), true);
+  });
+  $("#live-hint-close").addEventListener("click", () => ($("#live-hint").hidden = true));
+  $("#live-hint-open").addEventListener("click", () => {
+    $("#live-hint").hidden = true;
+    showView("settings");
+    window.setTimeout(() => $("#alerts-card").scrollIntoView({ block: "start", behavior: "smooth" }), 80);
+  });
+
+  // Spostando la mappa col dito si smette di seguirti; il tasto posizione ti riprende.
+  map.on("dragstart", () => {
+    if (live.on) live.follow = false;
+  });
+  $("#btn-gps").addEventListener("click", () => {
+    if (!live.on) return;
+    live.follow = true;
+    window.setTimeout(focusStep, 400);
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible" || !live.on) return;
+    keepAwake();
+    tickLive();
+    focusStep();
+  });
+
+  $("#alerts-copy").addEventListener("click", async () => {
+    const topic = readAlertSettings().topic;
+    try {
+      await navigator.clipboard.writeText(topic);
+      toast("Nome del canale copiato: incollalo in ntfy.");
+    } catch (error) {
+      toast("Copia a mano il nome del canale: " + topic);
+    }
+  });
+  $("#alerts-test").addEventListener("click", async () => {
+    const button = $("#alerts-test");
+    button.disabled = true;
+    try {
+      await publishAlert(readAlertSettings().topic, { title: "Prova riuscita", message: "Gli avvisi di Roma Mobility arrivano su questo telefono.", priority: 3 }, "prova-" + Date.now().toString(36));
+      toast("Avviso mandato: se non arriva, controlla di esserti iscritto al canale in ntfy.");
+    } catch (error) {
+      toast("ntfy non risponde adesso. Riprova tra poco.");
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  resumeLive();
 }
 
 boot();
