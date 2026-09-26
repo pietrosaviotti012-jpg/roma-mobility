@@ -242,6 +242,10 @@
               </button>
             </div>
           </div>
+          <button id="stop-route-btn" type="button" class="pill-button directions-button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19c0-6 4-8 9-8h5" /><polyline points="15 7 19 11 15 15" /></svg>
+            Ottieni indicazioni
+          </button>
           <div id="sheet-directions" class="chips" hidden></div>
           <p id="sheet-status" class="sheet-status" aria-live="polite"></p>
           <ul id="sheet-rows" class="departures"></ul>
@@ -297,7 +301,9 @@
               <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="15 5 8 12 15 19" /></svg>
             </button>
             <h2 id="nav-plan-title">Pianifica un viaggio</h2>
-            <span class="round-spacer" aria-hidden="true"></span>
+            <button id="nav-fav-trip" type="button" class="round-button fav-trip" aria-pressed="false" aria-label="Salva il tragitto nei preferiti">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3.6 2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.8l5.9-.9Z" /></svg>
+            </button>
           </div>
           <div class="od-box">
             <div class="od-fields">
@@ -347,8 +353,9 @@
           <button type="button" class="chip" data-mode="depart">Parti alle</button>
           <button type="button" class="chip" data-mode="arrive">Arriva entro</button>
         </div>
-        <div class="wheel" id="time-field" hidden>
+        <div class="wheel time-wheel" id="time-field" hidden>
           <div class="wheel-band" aria-hidden="true"></div>
+          <div class="wheel-col is-day" id="time-days" role="spinbutton" tabindex="0" aria-label="Giorno" aria-valuemin="0" aria-valuemax="13"></div>
           <div class="wheel-col" id="time-hours" role="spinbutton" tabindex="0" aria-label="Ore" aria-valuemin="0" aria-valuemax="23"></div>
           <div class="wheel-col" id="time-minutes" role="spinbutton" tabindex="0" aria-label="Minuti" aria-valuemin="0" aria-valuemax="55"></div>
         </div>

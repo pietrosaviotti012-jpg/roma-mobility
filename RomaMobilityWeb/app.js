@@ -38,8 +38,8 @@ const STORAGE = {
 };
 
 // Cambia a ogni pubblicazione: chi apre l'app dopo un aggiornamento vede cosa c'e' di nuovo.
-const APP_VERSION = "2026.09.26-4";
-const APP_NEWS = "In alto niente più sfocatura sulle scritte, e col percorso aperto mappa e tappe scorrono ognuna per conto suo.";
+const APP_VERSION = "2026.09.26-5";
+const APP_NEWS = "Casa, Lavoro e i tuoi posti preferiti in «Dove vuoi andare?», tragitti da salvare con la stella, suggerimenti mentre scrivi, il giorno nell’orario e «Ottieni indicazioni» dalle fermate.";
 
 /* ------------------------------------------------------------------ *
  * Utilita'
@@ -1801,6 +1801,8 @@ const nav = {
   returnTo: null, // da dove si e' arrivati alla ricerca: null (mappa) o "plan"
   timeMode: "now",
   timeValue: "",
+  timeDay: 0, // 0 = oggi, 1 = domani...
+  settingSlot: null, // "home", "work" o "place" mentre si sceglie un preferito
   sort: "fast",
   itineraries: [],
   direct: [],
@@ -1829,6 +1831,15 @@ const ICON = {
 
 function clockOf(iso) {
   return formatClock(new Date(iso));
+}
+
+// Sotto l'ora "45 min", sopra "1 h 12 min" (o "2 h" tondo).
+function durationLabel(minutes) {
+  const total = Math.max(0, Math.round(minutes));
+  if (total < 60) return total + " min";
+  const hours = Math.floor(total / 60);
+  const rest = total % 60;
+  return hours + " h" + (rest ? " " + rest + " min" : "");
 }
 
 function minutesBetween(fromIso, toIso) {
@@ -1989,6 +2000,7 @@ function rememberPlace(place) {
 
 function startSearch(picking, returnTo) {
   nav.picking = picking;
+  nav.settingSlot = null;
   nav.returnTo = returnTo || null;
   openNavPanel("search");
   const input = $("#nav-search-input");
@@ -1998,15 +2010,179 @@ function startSearch(picking, returnTo) {
   input.focus({ preventScroll: true });
 }
 
-function placeRow(place, index, group) {
-  const iconClass = place.here ? "is-here" : place.kind === "stop" ? place.tone || "tone-stop" : "";
-  const icon = place.here ? ICON.here : place.kind === "stop" ? (place.tone && place.tone !== "tone-stop" ? ICON.metro : ICON.bus) : ICON.pin;
+/* ---------------- preferiti: Casa, Lavoro, luoghi e tragitti ---------------- */
+
+const NAV_SAVED_KEY = "roma-mobility-web/nav-saved";
+
+const ICON_HOME = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11 12 4l8 7"/><path d="M6 10v10h12V10"/><path d="M10 20v-5h4v5"/></svg>';
+const ICON_WORK = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="7.5" width="17" height="12" rx="2"/><path d="M9 7.5V5.5h6v2M3.5 12.5h17"/></svg>';
+const ICON_STAR = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3.6 2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.8l5.9-.9Z"/></svg>';
+const ICON_EDIT = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16Z"/><path d="m13.5 6.5 4 4"/></svg>';
+const ICON_ROUTE = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="6" r="2.2"/><path d="M8 18h6a3.5 3.5 0 0 0 0-7h-4a3.5 3.5 0 0 1 0-7h6"/></svg>';
+
+function readSaved() {
+  const saved = readStorage(NAV_SAVED_KEY, {}) || {};
+  return {
+    home: saved.home || null,
+    work: saved.work || null,
+    places: Array.isArray(saved.places) ? saved.places : [],
+    trips: Array.isArray(saved.trips) ? saved.trips : [],
+  };
+}
+
+function writeSaved(saved) {
+  writeStorage(NAV_SAVED_KEY, saved);
+}
+
+function cleanPoint(place) {
+  if (!place || place.here) return { here: true };
+  return { name: place.name, sub: place.sub || "", lat: place.lat, lon: place.lon, kind: place.kind || "place", tone: place.tone || "" };
+}
+
+function samePlace(a, b) {
+  if (!a || !b) return false;
+  if (a.here || b.here) return Boolean(a.here && b.here);
+  return a.name === b.name && Math.abs(a.lat - b.lat) < 0.0005 && Math.abs(a.lon - b.lon) < 0.0005;
+}
+
+function isSavedPlace(place) {
+  return readSaved().places.some((item) => samePlace(item, place));
+}
+
+function toggleSavedPlace(place) {
+  const saved = readSaved();
+  const exists = saved.places.some((item) => samePlace(item, place));
+  saved.places = exists ? saved.places.filter((item) => !samePlace(item, place)) : [cleanPoint(place)].concat(saved.places).slice(0, 20);
+  writeSaved(saved);
+  return !exists;
+}
+
+function tripSaved(from, to) {
+  return readSaved().trips.some((trip) => samePlace(trip.from, from) && samePlace(trip.to, to));
+}
+
+function toggleSavedTrip() {
+  if (!nav.to) return;
+  const saved = readSaved();
+  const exists = tripSaved(nav.from, nav.to);
+  saved.trips = exists
+    ? saved.trips.filter((trip) => !(samePlace(trip.from, nav.from) && samePlace(trip.to, nav.to)))
+    : [{ from: cleanPoint(nav.from), to: cleanPoint(nav.to) }].concat(saved.trips).slice(0, 12);
+  writeSaved(saved);
+  updateTripStar();
+  toast(exists ? "Tragitto tolto dai preferiti." : "Tragitto salvato: lo trovi in «Dove vuoi andare?».");
+}
+
+function updateTripStar() {
+  const button = $("#nav-fav-trip");
+  if (!button) return;
+  const on = Boolean(nav.to) && tripSaved(nav.from, nav.to);
+  button.classList.toggle("is-on", on);
+  button.setAttribute("aria-pressed", on ? "true" : "false");
+  button.setAttribute("aria-label", on ? "Togli il tragitto dai preferiti" : "Salva il tragitto nei preferiti");
+}
+
+/* ---------------- mete frequenti (suggerimenti senza rete) ---------------- */
+
+// Coordinate controllate una per una: servono per suggerire mentre si scrive, anche prima della rete.
+const POPULAR_PLACES = [
+  ["Stazione Termini", 41.9010, 12.5016],
+  ["Colosseo", 41.8902, 12.4922],
+  ["Fontana di Trevi", 41.9009, 12.4833],
+  ["Pantheon", 41.8986, 12.4769],
+  ["Piazza Navona", 41.8992, 12.4731],
+  ["Piazza di Spagna", 41.9057, 12.4823],
+  ["Piazza Venezia", 41.8958, 12.4826],
+  ["Basilica di San Pietro", 41.9022, 12.4539],
+  ["Musei Vaticani", 41.9065, 12.4536],
+  ["Trastevere, Santa Maria in Trastevere", 41.8894, 12.4700],
+  ["Stazione Tiburtina", 41.9104, 12.5306],
+  ["Stazione Ostiense", 41.8718, 12.4863],
+  ["Aeroporto di Fiumicino", 41.7995, 12.2462],
+  ["Aeroporto di Ciampino", 41.7994, 12.5949],
+  ["Circo Massimo", 41.8861, 12.4851],
+  ["Galleria Borghese", 41.9142, 12.4921],
+  ["Piazza del Popolo", 41.9109, 12.4764],
+  ["Campo de’ Fiori", 41.8956, 12.4722],
+  ["Stadio Olimpico", 41.9340, 12.4547],
+  ["EUR, Palazzo dei Congressi", 41.8339, 12.4722],
+].map(([name, lat, lon]) => ({ name, sub: "Roma", lat, lon, kind: "place", popular: true, search: normalizeText(name) }));
+
+// Parole scritte a meta' ("colos", "piazza nav"): ogni parola deve comparire all'inizio di una parola del nome.
+function matchesWords(haystack, words) {
+  const parts = haystack.split(" ");
+  return words.every((word) => parts.some((part) => part.startsWith(word)));
+}
+
+function localSuggestions(text) {
+  const words = normalizeText(text).split(" ").filter(Boolean);
+  if (!words.length) return [];
+  const saved = readSaved();
+  const own = [saved.home && { ...saved.home, slot: "home", name: "Casa", sub: saved.home.name }, saved.work && { ...saved.work, slot: "work", name: "Lavoro", sub: saved.work.name }]
+    .filter(Boolean)
+    .concat(saved.places, readRecents())
+    .filter((place) => matchesWords(normalizeText(place.name + " " + (place.sub || "")), words));
+  const popular = POPULAR_PLACES.filter((place) => matchesWords(place.search, words));
+  const significant = searchWords(words.join(" "));
+  const stops = state.stops
+    .filter((stop) => matchesWords(stop.search, significant))
+    .sort((a, b) => (a.mode === "MetroStation" ? 0 : 1) - (b.mode === "MetroStation" ? 0 : 1))
+    .slice(0, 3)
+    .map((stop) => ({
+      name: stop.name,
+      sub: stopSubtitle(stop),
+      lat: stop.lat,
+      lon: stop.lon,
+      kind: "stop",
+      tone: stop.mode === "MetroStation" ? stopTone(stop) : "tone-stop",
+    }));
+  return dedupePlaces(own.concat(popular, stops)).slice(0, 6);
+}
+
+// Stesso nome a meno di 400 m = stesso luogo (il servizio restituisce spesso lo stesso posto piu' volte).
+function dedupePlaces(list) {
+  const kept = [];
+  list.forEach((place) => {
+    const key = normalizeText(place.name);
+    const twin = kept.find((other) => normalizeText(other.name) === key && haversineMeters(other, place) < 400);
+    if (!twin) kept.push(place);
+  });
+  return kept;
+}
+
+/* ---------------- righe degli elenchi ---------------- */
+
+function placeIcon(place) {
+  if (place.here) return { cls: "is-here", svg: ICON.here };
+  if (place.slot === "home") return { cls: "is-fav", svg: ICON_HOME };
+  if (place.slot === "work") return { cls: "is-fav", svg: ICON_WORK };
+  if (place.trip) return { cls: "is-fav", svg: ICON_ROUTE };
+  if (place.saved) return { cls: "is-fav", svg: ICON_STAR };
+  if (place.kind === "stop") return { cls: place.tone || "tone-stop", svg: place.tone && place.tone !== "tone-stop" ? ICON.metro : ICON.bus };
+  return { cls: "", svg: ICON.pin };
+}
+
+// action: null | "star" (salva/togli il luogo) | "edit" (Casa, Lavoro) | "unstar-trip"
+function placeRow(place, index, group, action) {
+  const icon = placeIcon(place);
+  let actionHtml = "";
+  if (action === "star") {
+    const on = isSavedPlace(place);
+    actionHtml = '<button type="button" class="nav-row-action' + (on ? " is-on" : "") + '" data-action="star" data-group="' + group +
+      '" data-index="' + index + '" aria-pressed="' + on + '" aria-label="' + (on ? "Togli dai preferiti" : "Salva nei preferiti") + '">' + ICON_STAR + "</button>";
+  } else if (action === "edit") {
+    actionHtml = '<button type="button" class="nav-row-action" data-action="edit" data-group="' + group + '" data-index="' + index +
+      '" aria-label="Cambia l’indirizzo di ' + escapeHtml(place.name) + '">' + ICON_EDIT + "</button>";
+  } else if (action === "unstar-trip") {
+    actionHtml = '<button type="button" class="nav-row-action is-on" data-action="unstar-trip" data-group="' + group + '" data-index="' + index +
+      '" aria-label="Togli il tragitto dai preferiti">' + ICON_STAR + "</button>";
+  }
   return (
-    '<li><button type="button" class="nav-row" data-group="' + group + '" data-index="' + index + '">' +
-    '<span class="nav-row-icon ' + iconClass + '">' + icon + "</span>" +
+    '<li><div class="nav-row-wrap"><button type="button" class="nav-row" data-group="' + group + '" data-index="' + index + '">' +
+    '<span class="nav-row-icon ' + icon.cls + '">' + icon.svg + "</span>" +
     '<span class="nav-row-text"><span class="nav-row-title">' + escapeHtml(place.name) + "</span>" +
-    (place.sub ? '<span class="nav-row-sub">' + escapeHtml(place.sub) + "</span>" : "") +
-    "</span></button></li>"
+    (place.sub ? '<span class="nav-row-sub' + (place.empty ? " is-empty" : "") + '">' + escapeHtml(place.sub) + "</span>" : "") +
+    "</span></button>" + actionHtml + "</div></li>"
   );
 }
 
@@ -2014,41 +2190,102 @@ function bindPlaceRows(container, groups) {
   container.querySelectorAll(".nav-row").forEach((row) => {
     row.addEventListener("click", () => {
       const place = groups[row.dataset.group][Number(row.dataset.index)];
-      if (place) choosePlace(place);
+      if (!place) return;
+      if (place.trip) {
+        nav.from = place.trip.from;
+        nav.to = place.trip.to;
+        showPlan();
+      } else if (place.slot && place.empty) {
+        startSettingSlot(place.slot);
+      } else {
+        choosePlace(place);
+      }
+    });
+  });
+  container.querySelectorAll(".nav-row-action").forEach((button) => {
+    button.addEventListener("click", () => {
+      const place = groups[button.dataset.group][Number(button.dataset.index)];
+      if (!place) return;
+      if (button.dataset.action === "star") {
+        const on = toggleSavedPlace(place);
+        button.classList.toggle("is-on", on);
+        button.setAttribute("aria-pressed", String(on));
+        button.setAttribute("aria-label", on ? "Togli dai preferiti" : "Salva nei preferiti");
+        if (!$("#nav-search-input").value.trim()) renderSearchHome();
+      } else if (button.dataset.action === "edit") {
+        startSettingSlot(place.slot);
+      } else if (button.dataset.action === "unstar-trip") {
+        const saved = readSaved();
+        saved.trips = saved.trips.filter((trip) => !(samePlace(trip.from, place.trip.from) && samePlace(trip.to, place.trip.to)));
+        writeSaved(saved);
+        renderSearchHome();
+      }
     });
   });
 }
 
+/* ---------------- pagina di ricerca ---------------- */
+
+// Impostare Casa, Lavoro o un nuovo luogo preferito: la ricerca sceglie il posto e lo salva.
+function startSettingSlot(slot) {
+  nav.settingSlot = slot;
+  const input = $("#nav-search-input");
+  input.value = "";
+  input.placeholder = slot === "home" ? "Indirizzo di casa" : slot === "work" ? "Indirizzo del lavoro" : "Luogo da salvare nei preferiti";
+  renderSearchHome();
+  input.focus({ preventScroll: true });
+}
+
 function renderSearchHome() {
   const body = $("#nav-search-body");
-  const groups = { here: [{ here: true, name: "Posizione attuale", sub: "Usa dove ti trovi adesso" }], recent: readRecents() };
+  const saved = readSaved();
+  const groups = {
+    here: [{ here: true, name: "Posizione attuale", sub: "Usa dove ti trovi adesso" }],
+    fav: [],
+    trips: saved.trips.map((trip) => ({ trip, name: "Verso " + pointText(trip.to), sub: "Da " + pointText(trip.from) })),
+    recent: readRecents(),
+    popular: POPULAR_PLACES.slice(0, 8),
+  };
   let html = "";
-  if (nav.picking === "from") html += '<ul class="nav-list">' + placeRow(groups.here[0], 0, "here") + "</ul>";
 
-  // Aprendo dalla mappa, in cima c'e' l'ultimo percorso: un tocco e si ritrovano i risultati.
-  const last = readStorage(NAV_LAST_KEY, null);
-  if (nav.picking === "to" && !nav.returnTo && last && last.to) {
-    html += '<p class="nav-section">Ultimo percorso</p><ul class="nav-list"><li>' +
-      '<button type="button" class="nav-row" id="nav-last-trip">' +
-      '<span class="nav-row-icon is-here">' + ICON.clock + "</span>" +
-      '<span class="nav-row-text"><span class="nav-row-title">' + escapeHtml(pointText(last.to)) + "</span>" +
-      '<span class="nav-row-sub">Da ' + escapeHtml(pointText(last.from)) + "</span></span></button></li></ul>";
+  if (nav.settingSlot) {
+    // Mentre si imposta un preferito si mostrano solo i posti da cui sceglierlo.
+    html += '<p class="nav-empty">Scrivi l’indirizzo, oppure scegli uno dei luoghi qui sotto.</p>';
+  } else {
+    if (nav.picking === "from") html += '<ul class="nav-list">' + placeRow(groups.here[0], 0, "here") + "</ul>";
+
+    groups.fav = [
+      saved.home ? { ...saved.home, slot: "home", name: "Casa", sub: saved.home.name } : { slot: "home", name: "Casa", sub: "Tocca per impostare", empty: true },
+      saved.work ? { ...saved.work, slot: "work", name: "Lavoro", sub: saved.work.name } : { slot: "work", name: "Lavoro", sub: "Tocca per impostare", empty: true },
+    ].concat(saved.places.map((place) => ({ ...place, saved: true })));
+    html += '<div class="nav-section-head"><p class="nav-section">Preferiti</p>' +
+      '<button type="button" class="text-button" id="nav-add-fav">+ Aggiungi</button></div><ul class="nav-list">' +
+      groups.fav.map((place, i) => placeRow(place, i, "fav", place.slot ? (place.empty ? null : "edit") : "star")).join("") + "</ul>";
+
+    if (groups.trips.length) {
+      html += '<p class="nav-section">Tragitti preferiti</p><ul class="nav-list">' +
+        groups.trips.map((trip, i) => placeRow(trip, i, "trips", "unstar-trip")).join("") + "</ul>";
+    }
+
+    // Aprendo dalla mappa, c'e' anche l'ultimo percorso: un tocco e si ritrovano i risultati.
+    const last = readStorage(NAV_LAST_KEY, null);
+    if (nav.picking === "to" && !nav.returnTo && last && last.to && !tripSaved(last.from, last.to)) {
+      groups.last = [{ trip: last, name: pointText(last.to), sub: "Da " + pointText(last.from) }];
+      html += '<p class="nav-section">Ultimo percorso</p><ul class="nav-list">' + placeRow(groups.last[0], 0, "last", null) + "</ul>";
+    }
   }
+
   if (groups.recent.length) {
-    html += '<p class="nav-section">Recenti</p><ul class="nav-list">' + groups.recent.map((p, i) => placeRow(p, i, "recent")).join("") + "</ul>";
-  } else if (nav.picking === "to") {
-    html += '<p class="nav-empty">Scrivi una via, una piazza, un locale o una fermata.</p>';
+    html += '<p class="nav-section">Recenti</p><ul class="nav-list">' +
+      groups.recent.map((p, i) => placeRow(p, i, "recent", nav.settingSlot ? null : "star")).join("") + "</ul>";
   }
+  html += '<p class="nav-section">Mete frequenti</p><ul class="nav-list">' +
+    groups.popular.map((p, i) => placeRow(p, i, "popular", nav.settingSlot ? null : "star")).join("") + "</ul>";
+
   body.innerHTML = html;
   bindPlaceRows(body, groups);
-  const lastButton = $("#nav-last-trip");
-  if (lastButton) {
-    lastButton.addEventListener("click", () => {
-      nav.from = last.from || { here: true };
-      nav.to = last.to;
-      showPlan();
-    });
-  }
+  const addButton = $("#nav-add-fav");
+  if (addButton) addButton.addEventListener("click", () => startSettingSlot("place"));
 }
 
 async function geocode(text) {
@@ -2059,7 +2296,6 @@ async function geocode(text) {
   const response = await fetch(url);
   if (!response.ok) throw new Error("ricerca non disponibile");
   const payload = await response.json();
-  const seen = new Set();
   const places = (Array.isArray(payload) ? payload : [])
     .filter((item) => Number.isFinite(item.lat) && Number.isFinite(item.lon))
     // Solo il Lazio: stesso riquadro della ricerca delle fermate.
@@ -2078,25 +2314,40 @@ async function geocode(text) {
         kind: isStop ? "stop" : "place",
         tone: local && local.mode === "MetroStation" ? stopTone(local) : isStop ? "tone-stop" : "",
       };
-    })
-    .filter((place) => {
-      const id = place.name + "|" + place.sub;
-      if (seen.has(id)) return false;
-      seen.add(id);
-      return true;
-    })
-    .slice(0, 12);
-  geocodeCache.set(key, places);
-  return places;
+    });
+  const unique = dedupePlaces(places).slice(0, 10);
+  geocodeCache.set(key, unique);
+  return unique;
+}
+
+function renderFound(local, remote, waiting) {
+  const body = $("#nav-search-body");
+  const remoteOnly = remote.filter((place) => !local.some((other) => normalizeText(other.name) === normalizeText(place.name) && haversineMeters(other, place) < 400));
+  const groups = { local, remote: remoteOnly };
+  let html = "";
+  if (local.length) html += '<p class="nav-section">Suggerimenti</p><ul class="nav-list">' + local.map((p, i) => placeRow(p, i, "local", nav.settingSlot || p.slot ? null : "star")).join("") + "</ul>";
+  if (remoteOnly.length) html += '<p class="nav-section">Luoghi</p><ul class="nav-list">' + remoteOnly.map((p, i) => placeRow(p, i, "remote", nav.settingSlot ? null : "star")).join("") + "</ul>";
+  if (!local.length && !remoteOnly.length) {
+    html = waiting
+      ? '<div class="skeleton trip-skeleton"></div>'
+      : '<p class="nav-empty">Nessun luogo con questo nome. Prova con la via, il quartiere o il nome del locale.</p>';
+  }
+  body.innerHTML = html;
+  bindPlaceRows(body, groups);
 }
 
 function onSearchInput() {
   const text = $("#nav-search-input").value.trim();
   window.clearTimeout(geocodeTimer);
-  if (text.length < 2) {
+  if (!text) {
     renderSearchHome();
     return;
   }
+  // Subito i suggerimenti che l'app conosce gia' (mete frequenti, preferiti, fermate): bastano 1-2 lettere.
+  const local = localSuggestions(text);
+  renderFound(local, [], text.length >= 2);
+  if (text.length < 2) return;
+
   const body = $("#nav-search-body");
   body.setAttribute("aria-busy", "true");
   geocodeTimer = window.setTimeout(async () => {
@@ -2104,22 +2355,39 @@ function onSearchInput() {
     try {
       const places = await geocode(text);
       if (token !== geocodeToken) return;
-      body.innerHTML = places.length
-        ? '<ul class="nav-list">' + places.map((p, i) => placeRow(p, i, "found")).join("") + "</ul>"
-        : '<p class="nav-empty">Nessun luogo con questo nome. Prova con la via o il nome del locale.</p>';
-      bindPlaceRows(body, { found: places });
+      renderFound(local, places, false);
     } catch (error) {
       if (token !== geocodeToken) return;
-      body.innerHTML = '<p class="nav-empty">La ricerca non risponde adesso. Controlla la connessione e riprova.</p>';
+      if (!local.length) body.innerHTML = '<p class="nav-empty">La ricerca non risponde adesso. Controlla la connessione e riprova.</p>';
     } finally {
       if (token === geocodeToken) body.removeAttribute("aria-busy");
     }
-  }, 300);
+  }, 220);
 }
 
 function choosePlace(place) {
-  rememberPlace(place);
-  const chosen = place.here ? { here: true } : { name: place.name, sub: place.sub, lat: place.lat, lon: place.lon };
+  // Si sta impostando Casa, Lavoro o un preferito: si salva e si torna all'elenco.
+  if (nav.settingSlot) {
+    const saved = readSaved();
+    const point = cleanPoint(place.here ? state.position && { name: "Posizione attuale", lat: state.position.lat, lon: state.position.lon } : place);
+    if (nav.settingSlot === "home") saved.home = point;
+    else if (nav.settingSlot === "work") saved.work = point;
+    else if (!saved.places.some((item) => samePlace(item, point))) saved.places.unshift(point);
+    writeSaved(saved);
+    const label = nav.settingSlot === "home" ? "Casa" : nav.settingSlot === "work" ? "Lavoro" : place.name;
+    nav.settingSlot = null;
+    toast("Fatto: «" + label + "» è nei preferiti.");
+    const input = $("#nav-search-input");
+    input.value = "";
+    input.placeholder = nav.picking === "from" ? "Da dove parti?" : "Dove vuoi andare?";
+    renderSearchHome();
+    return;
+  }
+
+  // Casa e Lavoro si usano col loro indirizzo, ma nella pianificazione si leggono col loro nome.
+  const target = place.slot ? { ...place, name: place.name, sub: place.sub } : place;
+  if (!place.popular && !place.slot && !place.trip) rememberPlace(target);
+  const chosen = place.here ? { here: true } : cleanPoint(target);
   if (nav.picking === "from") nav.from = chosen;
   else {
     nav.to = chosen;
@@ -2146,6 +2414,7 @@ function showPlan(replan = true) {
   const toText = $("#nav-to-text");
   toText.textContent = nav.to ? pointText(nav.to) : "Scegli la meta";
   toText.classList.toggle("is-empty", !nav.to);
+  updateTripStar();
   updateTimeText();
   if (replan || !nav.itineraries.length) planTrip();
 }
@@ -2154,16 +2423,29 @@ function timeParam() {
   if (nav.timeMode === "now" || !nav.timeValue) return null;
   const [hours, minutes] = nav.timeValue.split(":").map(Number);
   const date = new Date();
+  date.setDate(date.getDate() + (nav.timeDay || 0));
   date.setHours(hours, minutes, 0, 0);
-  // Un orario gia' passato di piu' di un'ora vale per domani.
-  if (date.getTime() < Date.now() - 3600000) date.setDate(date.getDate() + 1);
   return date.toISOString();
+}
+
+const DAY_FORMAT = new Intl.DateTimeFormat("it-IT", { weekday: "short", day: "numeric", month: "short" });
+
+function dayLabel(offset) {
+  if (offset === 0) return "Oggi";
+  if (offset === 1) return "Domani";
+  const date = new Date();
+  date.setDate(date.getDate() + offset);
+  const text = DAY_FORMAT.format(date);
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 function updateTimeText() {
   const label = $("#nav-time-text");
-  if (nav.timeMode === "depart") label.textContent = "Partenza alle " + nav.timeValue;
-  else if (nav.timeMode === "arrive") label.textContent = "Arrivo entro le " + nav.timeValue;
+  // Testo corto: deve stare su una riga nel tasto.
+  const day = nav.timeDay || 0;
+  const when = day === 0 ? "" : dayLabel(day) + " ";
+  if (nav.timeMode === "depart") label.textContent = (day ? when : "Partenza ") + "alle " + nav.timeValue;
+  else if (nav.timeMode === "arrive") label.textContent = (day ? when : "Arrivo ") + "entro le " + nav.timeValue;
   else label.textContent = "Partendo ora";
 }
 
@@ -2270,22 +2552,26 @@ function departureLine(group) {
     .map((it) => it.legs.find(isTransit))
     .filter(Boolean)
     .slice(0, 3)
-    .map((leg) => {
-      const minutes = Math.round((new Date(leg.startTime) - now) / 60000);
-      const text = minutes <= 0 ? "ora" : minutes < 60 ? minutes + " min" : clockOf(leg.startTime);
-      return '<strong class="' + (leg.realTime ? "is-live" : "") + '">' + text + "</strong>";
-    });
-  return '<p class="trip-depart">Parte tra ' + times.join(", ") + " da " + escapeHtml(placeLabel(first.from, "fermata")) + "</p>";
+    .map((leg) => ({ leg, minutes: Math.round((new Date(leg.startTime) - now) / 60000) }));
+  // "Parte tra 2 min, 11 min" entro l'ora, "alle 08:32, 08:41" piu' avanti (o un altro giorno).
+  const strong = (item, text) => '<strong class="' + (item.leg.realTime ? "is-live" : "") + '">' + text + "</strong>";
+  const soon = times.filter((item) => item.minutes > 0 && item.minutes < 60).map((item) => strong(item, item.minutes + " min"));
+  const later = times.filter((item) => item.minutes >= 60).map((item) => strong(item, clockOf(item.leg.startTime)));
+  const parts = [];
+  if (times.some((item) => item.minutes <= 0)) parts.push(strong(times[0], "adesso"));
+  if (soon.length) parts.push("tra " + soon.join(", "));
+  if (later.length) parts.push("alle " + later.join(", "));
+  return '<p class="trip-depart">Parte ' + parts.join(", poi ") + " da " + escapeHtml(placeLabel(first.from, "fermata")) + "</p>";
 }
 
 function tripCard(group, index) {
   const it = group.best;
   const minutes = Math.round(it.duration / 60);
   const walk = Math.round(walkingSeconds(it) / 60);
-  const extra = [walk ? walk + " min a piedi" : "", it.transfers ? it.transfers + (it.transfers === 1 ? " cambio" : " cambi") : "senza cambi"].filter(Boolean).join(" · ");
+  const extra = [walk ? durationLabel(walk) + " a piedi" : "", it.transfers ? it.transfers + (it.transfers === 1 ? " cambio" : " cambi") : "senza cambi"].filter(Boolean).join(" · ");
   return (
     '<button type="button" class="trip-card" data-group="' + index + '">' +
-    '<span class="trip-time"><span class="trip-duration">' + minutes + " <small>min</small></span>" +
+    '<span class="trip-time"><span class="trip-duration">' + (minutes < 60 ? minutes + " <small>min</small>" : Math.floor(minutes / 60) + '<span class="unit">h</span>' + (minutes % 60 ? " " + (minutes % 60) + " <small>min</small>" : "")) + "</span>" +
     '<span class="trip-clock">' + clockOf(it.startTime) + "<strong>" + clockOf(it.endTime) + "</strong></span></span>" +
     '<span class="trip-body">' + legsHtml(it) + departureLine(group) + '<p class="trip-extra">' + extra + "</p></span>" +
     "</button>"
@@ -2311,8 +2597,8 @@ function renderPlan() {
     [["walk", walk, "A piedi"], ["bike", bike, "Bici"]].forEach(([kind, it, label]) => {
       if (!it) return;
       const meters = it.legs.reduce((sum, leg) => sum + (leg.distance || 0), 0);
-      html += '<button type="button" class="direct-card" data-direct="' + kind + '"><strong>' + Math.round(it.duration / 60) +
-        ' min</strong><span>' + ICON[kind] + label + " " + metersLabel(meters) + "</span></button>";
+      html += '<button type="button" class="direct-card" data-direct="' + kind + '"><strong>' + durationLabel(it.duration / 60) +
+        '</strong><span>' + ICON[kind] + label + " " + metersLabel(meters) + "</span></button>";
     });
     html += "</div>";
   }
@@ -2411,10 +2697,10 @@ function renderSteps(itinerary) {
       const count = stops.length + 1;
       const minutes = minutesBetween(leg.startTime, leg.endTime);
       const list = stops.length
-        ? '<button type="button" class="step-toggle" aria-expanded="false">' + count + " fermate · " + minutes + " min</button>" +
+        ? '<button type="button" class="step-toggle" aria-expanded="false">' + count + " fermate · " + durationLabel(minutes) + "</button>" +
           '<ul class="step-stops" hidden>' + stops.map((stop) =>
             "<li><span>" + escapeHtml(placeLabel(stop, "Fermata")) + "</span><span>" + clockOf(stop.arrival || stop.departure) + "</span></li>").join("") + "</ul>"
-        : '<div class="step-note">' + count + " fermata · " + minutes + " min</div>";
+        : '<div class="step-note">' + count + " fermata · " + durationLabel(minutes) + "</div>";
       steps.push(stepHtml({
         cls: "is-transit",
         tone,
@@ -2433,7 +2719,7 @@ function renderSteps(itinerary) {
         tone: "var(--scheduled)",
         place: startName,
         placeStop: isFirst ? null : localStopForLeg(leg.from),
-        note: label + " " + minutes + " min" + (leg.distance ? " · " + metersLabel(leg.distance) : ""),
+        note: label + " " + durationLabel(minutes) + (leg.distance ? " · " + metersLabel(leg.distance) : ""),
         time: clockOf(leg.startTime),
         live: false,
       }));
@@ -2479,7 +2765,7 @@ function showItinerary(itinerary) {
 
   const minutes = Math.round(itinerary.duration / 60);
   $("#route-summary").innerHTML =
-    '<div class="route-total"><strong>' + minutes + " min</strong><span>" + clockOf(itinerary.startTime) + " – " + clockOf(itinerary.endTime) +
+    '<div class="route-total"><strong>' + durationLabel(minutes) + "</strong><span>" + clockOf(itinerary.startTime) + " – " + clockOf(itinerary.endTime) +
     "</span></div>" + (itinerary.legs.some(isTransit) ? legsHtml(itinerary) : "");
   renderSteps(itinerary);
   $("#route-sheet").hidden = false;
@@ -2534,7 +2820,9 @@ function timeWheelsReady() {
   if (timeWheels) return timeWheels;
   const hours = Array.from({ length: 24 }, (_, i) => i);
   const minutes = Array.from({ length: 12 }, (_, i) => i * 5);
+  const days = Array.from({ length: 14 }, (_, i) => i);
   timeWheels = {
+    days: makeWheel($("#time-days"), days, dayLabel),
     hours: makeWheel($("#time-hours"), hours, (h) => String(h).padStart(2, "0")),
     minutes: makeWheel($("#time-minutes"), minutes, (m) => String(m).padStart(2, "0")),
   };
@@ -2563,6 +2851,7 @@ function setTimeMode(mode) {
     window.setTimeout(() => {
       const [h, m] = nav.timeValue.split(":").map(Number);
       const wheels = timeWheelsReady();
+      wheels.days.set(nav.timeDay || 0);
       wheels.hours.set(h);
       wheels.minutes.set(Math.round(m / 5) * 5 % 60);
     }, 0);
@@ -2574,10 +2863,26 @@ function wireNavigation() {
   $("#nav-open").addEventListener("click", () => startSearch("to", null));
   $("#nav-search-input").addEventListener("input", onSearchInput);
   $("#nav-search-cancel").addEventListener("click", () => {
+    if (nav.settingSlot) {
+      startSearch(nav.picking, nav.returnTo);
+      return;
+    }
     if (nav.returnTo === "plan" && nav.to) showPlan(false);
     else closeNavPanel();
   });
   $("#nav-plan-back").addEventListener("click", closeNavPanel);
+  $("#nav-fav-trip").addEventListener("click", toggleSavedTrip);
+  $("#stop-route-btn").addEventListener("click", () => {
+    const stop = state.openStop;
+    if (!stop) return;
+    closeSheet();
+    showView("map");
+    nav.from = { here: true };
+    nav.to = { name: stop.name, sub: stopSubtitle(stop), lat: stop.lat, lon: stop.lon, kind: "stop", tone: stop.mode === "MetroStation" ? stopTone(stop) : "tone-stop" };
+    nav.returnTo = null;
+    rememberPlace(nav.to);
+    showPlan();
+  });
   $("#nav-from").addEventListener("click", () => startSearch("from", "plan"));
   $("#nav-to").addEventListener("click", () => startSearch("to", "plan"));
   $("#nav-swap").addEventListener("click", () => {
@@ -2605,6 +2910,9 @@ function wireNavigation() {
     if (nav.timeMode !== "now") {
       const wheels = timeWheelsReady();
       nav.timeValue = String(wheels.hours.get()).padStart(2, "0") + ":" + String(wheels.minutes.get()).padStart(2, "0");
+      nav.timeDay = wheels.days.get();
+    } else {
+      nav.timeDay = 0;
     }
     $("#time-sheet").hidden = true;
     updateTimeText();

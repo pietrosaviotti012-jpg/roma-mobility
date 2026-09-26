@@ -36,13 +36,22 @@ aprono le partenze.
 
 Sulla mappa c'e' la barra **Dove vuoi andare?**. Il flusso ricalca Moovit:
 
-1. **ricerca** del luogo (vie, piazze, locali, fermate) con i **recenti** salvati nel telefono;
+1. **ricerca** del luogo (vie, piazze, locali, fermate): bastano poche lettere ("colos", "piazza bolo").
+   Mentre scrivi compaiono subito i suggerimenti che l'app conosce gia' (mete frequenti, preferiti,
+   recenti, fermate), poi i luoghi trovati da Transitous; i doppioni vicini meno di 400 m spariscono;
 2. **Pianifica un viaggio**: partenza (di solito *Posizione attuale*) e arrivo, tasto per scambiarli,
-   *Partendo ora / Parti alle / Arriva entro* (+15 minuti), ordine per *piu' veloci*, *meno a piedi*,
+   *Partendo ora / Parti alle / Arriva entro* con il **giorno** (oggi, domani, fino a due settimane),
+   ordine per *piu' veloci*, *meno a piedi*,
    *meno cambi*; le corse uguali dalla stessa fermata stanno in una scheda sola con piu' orari;
 3. alternative **a piedi e in bici**;
 4. il percorso scelto si disegna **sulla mappa** con i colori delle linee e un foglio con le tappe
    (fermate intermedie apribili, fermate che portano alla loro scheda con le partenze).
+
+**Preferiti** (salvati solo nel telefono): *Casa* e *Lavoro* in cima a "Dove vuoi andare?" (matita
+per cambiarli), altri luoghi con la stella accanto ai risultati o con *+ Aggiungi*, e i **tragitti**
+salvati con la stella in alto a destra in *Pianifica un viaggio*. Dalla scheda di una fermata,
+**Ottieni indicazioni** calcola il percorso dalla tua posizione fino a li'. Le durate oltre l'ora si
+leggono "1 h 12 min".
 
 I percorsi li calcola **Transitous** (`api.transitous.org`), servizio pubblico e gratuito basato su
 MOTIS, direttamente dal telefono: nessun server nostro. Copre ATAC (bus, tram, metro, con tempo
@@ -88,7 +97,7 @@ ogni volta che riapri l'app e ogni mezz'ora mentre e' aperta.
 Ogni volta che pubblichi:
 
 1. in `app.js` cambia `APP_VERSION` e scrivi la novita' in `APP_NEWS`;
-2. in `sw.js` alza `CACHE_VERSION` (ora e' `v23`).
+2. in `sw.js` alza `CACHE_VERSION` (ora e' `v24`).
 
 **Unica eccezione:** il colore della barra dell'orologio iOS lo legge solo quando aggiungi il sito
 alla schermata Home. Con questa versione la barra e' cambiata, quindi l'icona va tolta e rimessa

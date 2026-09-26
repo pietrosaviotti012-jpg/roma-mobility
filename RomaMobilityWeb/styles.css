@@ -1377,3 +1377,49 @@ main {
   font-weight: 600;
   cursor: pointer;
 }
+
+/* ---------- Preferiti di navigazione, suggerimenti, giorno ---------- */
+
+/* Riga con un'azione a destra (stella, matita): due tasti affiancati, non uno dentro l'altro. */
+.nav-row-wrap { display: flex; align-items: center; }
+.nav-list li + li .nav-row-wrap { border-top: 1px solid var(--line); }
+.nav-list li + li .nav-row-wrap .nav-row { border-top: 0; }
+.nav-row-wrap .nav-row { flex: 1; min-width: 0; }
+
+.nav-row-action {
+  flex: 0 0 auto;
+  width: 48px;
+  height: 48px;
+  margin-right: 4px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.nav-row-action svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.nav-row-action.is-on { color: var(--star); }
+.nav-row-action.is-on svg { fill: var(--star); }
+
+.nav-row-icon.is-fav { background: color-mix(in srgb, var(--star) 22%, transparent); color: var(--star); }
+.nav-row-sub.is-empty { color: var(--live); }
+
+.nav-section-head { display: flex; align-items: center; justify-content: space-between; margin: 18px 2px 8px; }
+.nav-section-head .nav-section { margin: 0; }
+.nav-section-head .text-button { min-height: 32px; font-size: 14px; }
+
+.fav-trip.is-on svg { fill: var(--star); stroke: var(--star); }
+
+.directions-button { align-self: flex-start; margin-top: 12px; color: var(--live); }
+
+/* Rullo dell'orario con il giorno: tre colonne. */
+.time-wheel .wheel-col { width: 64px; }
+.time-wheel .wheel-col.is-day { width: 150px; }
+.time-wheel .wheel-band { width: min(100%, 300px); }
+.time-wheel .wheel-item { font-size: 18px; }
+.time-wheel .is-day .wheel-item { font-size: 16px; }
+.trip-duration .unit { margin-left: 1px; font-size: 16px; color: var(--ink-soft); }
+#nav-time-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
