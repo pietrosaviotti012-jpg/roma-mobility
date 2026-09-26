@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="it">
+  <head>
+    <meta charset="utf-8" />
+    <title>Roma Mobility</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+    <meta name="description" content="Fermate e orari di bus, tram e metro di Roma e del Lazio." />
+
+    <!-- iPhone: aggiunto alla schermata Home si apre a schermo intero, come un'app.
+         Con "default" la barra dell'orologio resta di iOS: niente sfocatura sopra la pagina,
+         e il suo colore arriva da theme-color qui sotto, bianco o blu scuro secondo il tema. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Roma Mobility" />
+    <meta id="theme-color" name="theme-color" content="#ffffff" />
+    <script>
+      // Prima che la pagina si disegni: tema salvato e colore della barra di sistema coerente.
+      (function () {
+        try {
+          var saved = JSON.parse(localStorage.getItem("roma-mobility-web/settings") || "{}");
+          var theme = saved.theme || "auto";
+          var dark = theme === "dark" || (theme === "auto" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+          if (theme !== "auto") document.documentElement.setAttribute("data-theme", theme);
+          document.getElementById("theme-color").setAttribute("content", dark ? "#101c33" : "#ffffff");
+        } catch (error) {
+          // Senza memoria disponibile si parte col tema del telefono.
+        }
+      })();
+    </script>
+
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+    <link rel="icon" href="icons/icon-192.png" />
+    <link rel="manifest" href="manifest.webmanifest" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Semi+Condensed:wght@600;700&display=swap"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"
+      integrity="sha512-h9FcoyWjHcOcmEVkxOfTLnmZFWIH0iZhZT1H2TbOq55xssQGEJHEaIm+PgoUaZbRvQTNTluNOEfb1ZRy6D3BOw=="
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="splash" class="splash">
+      <img id="splash-logo" src="icons/logo-light.png" alt="Roma Mobility" class="splash-logo" width="509" height="420" fetchpriority="high" />
+      <p class="splash-text">Preparo le fermate di Roma…</p>
+      <p id="splash-error" class="splash-error" hidden></p>
+    </div>
+
+    <h1 class="sr-only">Roma Mobility</h1>
+
+    <main id="app" hidden>
+      <!-- MAPPA -->
+      <section id="view-map" class="view view-map" aria-label="Mappa">
+        <div id="map"></div>
+        <button id="nav-open" class="map-search" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" /><line x1="16" y1="16" x2="21" y2="21" /></svg>
+          <span>Dove vuoi andare?</span>
+        </button>
+        <p id="map-hint" class="map-hint">Avvicina la mappa per vedere le fermate</p>
+
+        <!-- Percorso scelto: foglio sopra la mappa, la mappa resta usabile -->
+        <section id="route-sheet" class="route-sheet" aria-labelledby="route-title" hidden>
+          <div class="route-sheet-head">
+            <button id="route-back" type="button" class="back-button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="15 5 8 12 15 19" /></svg>
+              Percorsi
+            </button>
+            <button id="route-close" type="button" class="icon-button" aria-label="Chiudi il percorso">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" /></svg>
+            </button>
+          </div>
+          <div id="route-summary" class="route-summary"></div>
+          <h2 id="route-title" class="sr-only">Percorso scelto</h2>
+          <ol id="route-steps" class="route-steps"></ol>
+        </section>
+        <button id="btn-gps" class="fab" type="button" aria-label="Centra sulla mia posizione">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="4" />
+            <circle cx="12" cy="12" r="8.5" />
+            <line x1="12" y1="1.5" x2="12" y2="4" />
+            <line x1="12" y1="20" x2="12" y2="22.5" />
+            <line x1="1.5" y1="12" x2="4" y2="12" />
+            <line x1="20" y1="12" x2="22.5" y2="12" />
+          </svg>
+        </button>
+      </section>
+
+      <!-- FERMATE -->
+      <section id="view-list" class="view view-scroll" aria-labelledby="list-title" hidden>
+        <div class="list-head">
+          <h2 id="list-title" class="view-title">Fermate</h2>
+          <label class="search">
+            <span class="sr-only">Cerca una fermata, una via o una piazza</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true" class="search-icon">
+              <circle cx="11" cy="11" r="6.5" />
+              <line x1="16" y1="16" x2="21" y2="21" />
+            </svg>
+            <input
+              id="search"
+              name="ricerca"
+              type="search"
+              placeholder="Fermata, via o piazza"
+              autocomplete="off"
+              autocorrect="off"
+              spellcheck="false"
+              enterkeyhint="search"
+            />
+          </label>
+          <div class="chips" id="search-filters">
+            <button type="button" class="chip is-on" data-filter="tutte">Tutte</button>
+            <button type="button" class="chip" data-filter="preferite">Preferite</button>
+            <button type="button" class="chip" data-filter="metro">Metro</button>
+            <button type="button" class="chip" data-filter="bus">Bus e tram</button>
+            <button type="button" class="chip" data-filter="cotral">COTRAL</button>
+          </div>
+        </div>
+        <p id="search-note" class="section-note" aria-live="polite"></p>
+        <ul id="place-list" class="stop-list" hidden></ul>
+        <ul id="stop-list" class="stop-list"></ul>
+        <p id="list-empty" class="list-empty" aria-live="polite" hidden></p>
+      </section>
+
+      <!-- IMPOSTAZIONI -->
+      <section id="view-settings" class="view view-scroll" aria-labelledby="settings-title" hidden>
+        <h2 id="settings-title" class="view-title">Impostazioni</h2>
+
+        <section class="card">
+          <h3>Aspetto</h3>
+          <p class="card-sub">Automatico segue il tema del telefono.</p>
+          <div class="options" id="opt-theme"></div>
+        </section>
+
+        <section class="card">
+          <h3>Come arrivare</h3>
+          <p class="card-sub">
+            Sulla mappa tocca «Dove vuoi andare?», scegli la meta e l’app ti propone i modi per arrivarci con
+            bus, tram, metro e treni regionali, più le alternative a piedi e in bici. I bus COTRAL non ci sono:
+            il loro calendario pubblico non è aggiornato.
+          </p>
+        </section>
+
+        <section class="card">
+          <h3>Fermate successive</h3>
+          <p class="card-sub">
+            Tocca una corsa nella scheda di una fermata: vedi dove va, le fermate che mancano e quanto ci
+            mette ad arrivare a ognuna partendo da lì. Se il mezzo è in tempo reale, i tempi tengono
+            conto del suo anticipo o ritardo.
+          </p>
+        </section>
+
+        <section class="card">
+          <h3>Quanto guardare avanti</h3>
+          <p class="card-sub">Nella scheda di una fermata vedi i mezzi in arrivo entro questo tempo.</p>
+          <div class="wheel" id="window-wheel">
+            <div class="wheel-band" aria-hidden="true"></div>
+            <div class="wheel-col" id="wheel-hours" role="spinbutton" tabindex="0" aria-label="Ore"
+              aria-valuemin="0" aria-valuemax="3"></div>
+            <div class="wheel-col" id="wheel-minutes" role="spinbutton" tabindex="0" aria-label="Minuti"
+              aria-valuemin="0" aria-valuemax="45"></div>
+          </div>
+          <p class="wheel-summary" id="wheel-summary" aria-live="polite"></p>
+        </section>
+
+        <section class="card">
+          <h3>Ogni quanto aggiornare</h3>
+          <p class="card-sub">Vale mentre tieni aperta una fermata.</p>
+          <div class="options" id="opt-refresh"></div>
+        </section>
+
+        <section class="card">
+          <h3>Come leggere gli orari</h3>
+          <ul class="legend">
+            <li><span class="eta is-live"><span class="eta-value">4</span><span class="eta-unit">min</span></span> Il mezzo sta trasmettendo la sua posizione: questo è il tempo vero.</li>
+            <li><span class="eta"><span class="eta-value">11</span><span class="eta-unit">min</span></span> Orario previsto dal programma di servizio.</li>
+            <li><span class="eta is-guess"><span class="eta-value">18</span><span class="eta-unit">min</span></span> Corsa COTRAL: il loro calendario pubblico è vecchio, prendila come un’indicazione.</li>
+          </ul>
+        </section>
+
+        <p class="credit">Fatto da Pietro Saviotti con i dati aperti di ATAC, COTRAL e Transitland.</p>
+        <p class="credit">Percorsi calcolati con <a href="https://transitous.org/sources/" target="_blank" rel="noopener">Transitous</a> e mappe di OpenStreetMap.</p>
+        <p class="credit" id="app-version"></p>
+      </section>
+    </main>
+
+    <nav id="tabs" class="tabs" aria-label="Sezioni" hidden>
+      <button type="button" class="tab is-on" data-view="map" aria-current="page">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M9 3.5 3.5 6v14.5L9 18l6 2.5 5.5-2.5V3.5L15 6Z" />
+          <line x1="9" y1="3.5" x2="9" y2="18" />
+          <line x1="15" y1="6" x2="15" y2="20.5" />
+        </svg>
+        Mappa
+      </button>
+      <button type="button" class="tab" data-view="list">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 21.5s7-6.1 7-11.2A7 7 0 0 0 5 10.3c0 5.1 7 11.2 7 11.2Z" />
+          <circle cx="12" cy="10" r="2.6" />
+        </svg>
+        Fermate
+      </button>
+      <button type="button" class="tab" data-view="settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="3.1" />
+          <path d="M19.2 14.3a1.5 1.5 0 0 0 .3 1.66l.06.05a1.83 1.83 0 1 1-2.6 2.6l-.05-.06a1.5 1.5 0 0 0-1.66-.3 1.5 1.5 0 0 0-.91 1.38v.15a1.83 1.83 0 1 1-3.67 0v-.08a1.5 1.5 0 0 0-.98-1.38 1.5 1.5 0 0 0-1.66.3l-.05.06a1.83 1.83 0 1 1-2.6-2.6l.06-.05a1.5 1.5 0 0 0 .3-1.66 1.5 1.5 0 0 0-1.38-.91h-.15a1.83 1.83 0 1 1 0-3.67h.08a1.5 1.5 0 0 0 1.38-.98 1.5 1.5 0 0 0-.3-1.66l-.06-.05a1.83 1.83 0 1 1 2.6-2.6l.05.06a1.5 1.5 0 0 0 1.66.3h.07a1.5 1.5 0 0 0 .91-1.38v-.15a1.83 1.83 0 1 1 3.67 0v.08a1.5 1.5 0 0 0 .91 1.38 1.5 1.5 0 0 0 1.66-.3l.05-.06a1.83 1.83 0 1 1 2.6 2.6l-.06.05a1.5 1.5 0 0 0-.3 1.66v.07a1.5 1.5 0 0 0 1.38.91h.15a1.83 1.83 0 1 1 0 3.67h-.08a1.5 1.5 0 0 0-1.38.91Z" />
+        </svg>
+        Impostazioni
+      </button>
+    </nav>
+
+    <!-- SCHEDA DELLA FERMATA: partenze, e toccando una corsa le sue fermate successive -->
+    <div id="sheet-stop" class="sheet" hidden>
+      <div class="sheet-backdrop" data-close></div>
+      <div class="sheet-body" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+        <div class="sheet-grab" aria-hidden="true"></div>
+
+        <div id="panel-departures" class="panel">
+          <div class="sheet-head">
+            <div class="sheet-heading">
+              <h2 id="sheet-title"></h2>
+              <p id="sheet-sub"></p>
+            </div>
+            <div class="sheet-actions">
+              <button id="sheet-fav" type="button" class="icon-button" aria-pressed="false" aria-label="Salva nei preferiti">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m12 3.6 2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.8l5.9-.9Z" />
+                </svg>
+              </button>
+              <button type="button" class="icon-button" data-close aria-label="Chiudi">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div id="sheet-directions" class="chips" hidden></div>
+          <p id="sheet-status" class="sheet-status" aria-live="polite"></p>
+          <ul id="sheet-rows" class="departures"></ul>
+          <button id="sheet-refresh" type="button" class="primary">Aggiorna adesso</button>
+        </div>
+
+        <div id="panel-trip" class="panel" hidden>
+          <div class="sheet-head">
+            <button id="trip-back" type="button" class="back-button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="15 5 8 12 15 19" /></svg>
+              Partenze
+            </button>
+            <div class="sheet-actions">
+              <button type="button" class="icon-button" data-close aria-label="Chiudi">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="trip-title">
+            <span id="trip-line" class="line"></span>
+            <div class="sheet-heading">
+              <h2 id="trip-destination"></h2>
+              <p id="trip-sub"></p>
+            </div>
+          </div>
+          <p id="trip-status" class="sheet-status" aria-live="polite"></p>
+          <ol id="trip-stops" class="trip-stops"></ol>
+        </div>
+      </div>
+    </div>
+
+    <!-- NAVIGAZIONE: ricerca del luogo e pianificazione, a tutto schermo come in Moovit -->
+    <div id="nav-panel" class="nav-panel" hidden>
+      <section id="nav-page-search" class="nav-page" aria-labelledby="nav-search-label" hidden>
+        <div class="nav-search-head">
+          <label class="search nav-search-field">
+            <span id="nav-search-label" class="sr-only">Cerca un luogo, una via o una fermata</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true" class="search-icon"><circle cx="11" cy="11" r="6.5" /><line x1="16" y1="16" x2="21" y2="21" /></svg>
+            <input id="nav-search-input" type="search" placeholder="Dove vuoi andare?" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="search" />
+          </label>
+          <button id="nav-search-cancel" type="button" class="text-button">Annulla</button>
+        </div>
+        <div class="nav-scroll" id="nav-search-body" aria-live="polite"></div>
+      </section>
+
+      <section id="nav-page-plan" class="nav-page" aria-labelledby="nav-plan-title" hidden>
+        <div class="nav-plan-head">
+          <div class="nav-plan-bar">
+            <button id="nav-plan-back" type="button" class="round-button" aria-label="Chiudi la pianificazione">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="15 5 8 12 15 19" /></svg>
+            </button>
+            <h2 id="nav-plan-title">Pianifica un viaggio</h2>
+            <span class="round-spacer" aria-hidden="true"></span>
+          </div>
+          <div class="od-box">
+            <div class="od-fields">
+              <button id="nav-from" type="button" class="od-field">
+                <span class="od-dot" aria-hidden="true"></span>
+                <span class="od-label">Da</span>
+                <span id="nav-from-text" class="od-text">Posizione attuale</span>
+              </button>
+              <button id="nav-to" type="button" class="od-field">
+                <span class="od-pin" aria-hidden="true"></span>
+                <span class="od-label">A</span>
+                <span id="nav-to-text" class="od-text"></span>
+              </button>
+            </div>
+            <button id="nav-swap" type="button" class="round-button" aria-label="Scambia partenza e arrivo">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="8 4 8 20" /><polyline points="4 8 8 4 12 8" /><polyline points="16 20 16 4" /><polyline points="12 16 16 20 20 16" /></svg>
+            </button>
+          </div>
+          <div class="nav-actions">
+            <button id="nav-time" type="button" class="pill-button">
+              <span id="nav-time-text">Partendo ora</span>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="6 9 12 15 18 9" /></svg>
+            </button>
+            <button id="nav-show-map" type="button" class="pill-button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3.5 3.5 6v14.5L9 18l6 2.5 5.5-2.5V3.5L15 6Z" /><line x1="9" y1="3.5" x2="9" y2="18" /><line x1="15" y1="6" x2="15" y2="20.5" /></svg>
+              Visualizza
+            </button>
+          </div>
+          <div class="chips nav-sort" id="nav-sort">
+            <button type="button" class="chip is-on" data-sort="fast">Più veloci</button>
+            <button type="button" class="chip" data-sort="walk">Meno a piedi</button>
+            <button type="button" class="chip" data-sort="changes">Meno cambi</button>
+          </div>
+        </div>
+        <div class="nav-scroll" id="nav-results" aria-live="polite"></div>
+      </section>
+    </div>
+
+    <!-- Quando partire o arrivare -->
+    <div id="time-sheet" class="sheet" hidden>
+      <div class="sheet-backdrop" data-time-close></div>
+      <div class="sheet-body time-body" role="dialog" aria-modal="true" aria-labelledby="time-title">
+        <div class="sheet-grab" aria-hidden="true"></div>
+        <h2 id="time-title">Quando vuoi viaggiare?</h2>
+        <div class="chips" id="time-mode">
+          <button type="button" class="chip is-on" data-mode="now">Partendo ora</button>
+          <button type="button" class="chip" data-mode="depart">Parti alle</button>
+          <button type="button" class="chip" data-mode="arrive">Arriva entro</button>
+        </div>
+        <div class="wheel" id="time-field" hidden>
+          <div class="wheel-band" aria-hidden="true"></div>
+          <div class="wheel-col" id="time-hours" role="spinbutton" tabindex="0" aria-label="Ore" aria-valuemin="0" aria-valuemax="23"></div>
+          <div class="wheel-col" id="time-minutes" role="spinbutton" tabindex="0" aria-label="Minuti" aria-valuemin="0" aria-valuemax="55"></div>
+        </div>
+        <button id="time-confirm" type="button" class="primary">Mostra i percorsi</button>
+      </div>
+    </div>
+
+    <div id="update-banner" class="update-banner" role="status" hidden>
+      <p id="update-text"></p>
+      <button id="update-action" type="button" class="update-button">Aggiorna</button>
+      <button id="update-close" type="button" class="update-close" aria-label="Chiudi l’avviso">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <line x1="6" y1="6" x2="18" y2="18" />
+          <line x1="18" y1="6" x2="6" y2="18" />
+        </svg>
+      </button>
+    </div>
+
+    <p id="toast" class="toast" role="status" hidden></p>
+
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"
+      integrity="sha512-puJW3E/qXDqYp9IfhAI54BJEaWIfloJ7JWs7OeD5i6ruC9JZL1gERT1wjtwXFlh7CjE7ZJ+/vcRZRkIYIb6p4g=="
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    ></script>
+    <script src="app.js"></script>
+  </body>
+</html>

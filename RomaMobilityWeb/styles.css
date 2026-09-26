@@ -1,0 +1,1370 @@
+/*
+ * Roma Mobility - foglio di stile unico.
+ *
+ * I colori vengono dal logo e dalle linee vere: il blu scuro del segnaposto fa da inchiostro,
+ * arancio, blu e verde sono le metro A, B e C. Il blu acceso e' riservato a una cosa sola:
+ * i minuti che arrivano in tempo reale.
+ *
+ * Il tema si sceglie nelle impostazioni: data-theme="light" o "dark" sul tag <html>.
+ * Senza quell'attributo si segue il telefono.
+ */
+
+:root {
+  color-scheme: light;
+
+  --navy: #1b2e4f;
+  --ink: #16233f;
+  --ink-soft: #5b6680;
+  --bg: #eef1f5;
+  --surface: #ffffff;
+  --surface-2: #f3f5f9;
+  --line: #e2e6ee;
+  --live: #1668c9;
+  --scheduled: #78849b;
+  --star: #dd9f27;
+  --danger: #c02a2a;
+
+  --ma: #e08a2e;
+  --mb: #2f7fd1;
+  --mc: #4e9a5f;
+  --bus: #edf0f6;
+
+  --shadow-soft: 0 2px 6px rgb(17 26 45 / 6%), 0 10px 30px rgb(17 26 45 / 12%);
+  --shadow-sheet: 0 -8px 40px rgb(17 26 45 / 22%);
+
+  --radius: 16px;
+  --radius-pill: 999px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  /* Soglia alta: nessuna scritta sopra questa linea. Su iOS 26 la zona dell'orologio e' sfocata e la
+     sfocatura scende oltre la barra (e' un effetto del sistema, la pagina non puo' toglierlo).
+     Con l'isola dinamica (59 px) la soglia cade a 121 px, mezzo centimetro sotto la prima versione;
+     senza barra (browser normale) resta a 14 px. Tutto cio' che sta in alto parte da qui. */
+  --top-clear: max(14px, calc(var(--safe-top) * 2.05));
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --gutter: 16px;
+  --tabs-h: 56px;
+  --control: 52px;
+  /* Colore della striscia dell'orologio: iOS 26 lo prende dallo sfondo del body. */
+  --bar: #ffffff;
+
+  --sans: "Barlow", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --condensed: "Barlow Semi Condensed", "Barlow", -apple-system, sans-serif;
+}
+
+/* Tema scuro: blu notte, lo stesso della barra dell'orologio (theme-color #101c33). */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --navy: #d5deee;
+    --ink: #e8edf6;
+    --ink-soft: #9aa7bf;
+    --bg: #0b1528;
+    --surface: #101c33;
+    --surface-2: #17253f;
+    --line: #243452;
+    --live: #6cb0f6;
+    --scheduled: #8e9bb3;
+    --star: #f0bd4c;
+    --danger: #f08a8a;
+    --bus: #22324f;
+    --shadow-soft: 0 2px 6px rgb(0 0 0 / 30%), 0 12px 34px rgb(0 0 0 / 42%);
+    --shadow-sheet: 0 -8px 44px rgb(0 0 0 / 55%);
+    --bar: #101c33;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --navy: #d5deee;
+  --ink: #e8edf6;
+  --ink-soft: #9aa7bf;
+  --bg: #0b1528;
+  --surface: #101c33;
+  --surface-2: #17253f;
+  --line: #243452;
+  --live: #6cb0f6;
+  --scheduled: #8e9bb3;
+  --star: #f0bd4c;
+  --danger: #f08a8a;
+  --bus: #22324f;
+  --shadow-soft: 0 2px 6px rgb(0 0 0 / 30%), 0 12px 34px rgb(0 0 0 / 42%);
+  --shadow-sheet: 0 -8px 44px rgb(0 0 0 / 55%);
+  --bar: #101c33;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+/* Colonna: schermate sopra, schede sotto, tutto nel flusso normale. Nessun elemento fixed tocca il
+   bordo alto, cosi' iOS 26 colora la striscia dell'orologio con lo sfondo del body (var(--bar)). */
+body {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  background: var(--bar);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.4;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  /* E' un'app, non un documento: tenendo premuto non si seleziona la mappa (tutta blu, con
+     Copia / Cerca info / Traduci). Si scrive e si seleziona solo nel campo di ricerca. */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -0.012em; text-wrap: balance; }
+button { font-family: inherit; color: inherit; }
+
+:focus-visible { outline: 2px solid var(--live); outline-offset: 2px; border-radius: 8px; }
+
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ---------- Avvio ---------- */
+
+/* L'avvio e' sempre bianco, anche col tema scuro: il logo si vede com'e' stato disegnato. */
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  padding: 32px;
+  text-align: center;
+  background: #ffffff;
+}
+
+.splash-logo { width: min(64vw, 270px); height: auto; }
+.splash-text { margin: 0; color: #5b6680; font-size: 15px; }
+.splash-error { margin: 0; max-width: 34ch; color: #c02a2a; font-weight: 500; }
+
+/* ---------- Impianto: tre sezioni sopra la barra delle schede ---------- */
+
+main {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  background: var(--bg);
+  /* La mappa usa livelli fino a 1000 (i crediti di OpenStreetMap): qui dentro restano chiusi,
+     cosi' non finiscono sopra la scheda della fermata. */
+  isolation: isolate;
+}
+
+.view { position: absolute; inset: 0; }
+
+.view-scroll {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: var(--top-clear) calc(var(--safe-right) + var(--gutter)) 28px
+    calc(var(--safe-left) + var(--gutter));
+}
+
+.view-title { margin: 4px 2px 14px; font-size: 28px; letter-spacing: -0.02em; }
+
+/* ---------- Mappa ---------- */
+
+#map { position: absolute; inset: 0; background: var(--surface-2); }
+
+.map-hint {
+  position: absolute;
+  top: var(--top-clear);
+  left: 50%;
+  z-index: 500;
+  margin: 0;
+  padding: 8px 16px;
+  transform: translateX(-50%);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.fab {
+  position: absolute;
+  right: calc(var(--safe-right) + var(--gutter));
+  bottom: var(--gutter);
+  z-index: 500;
+  width: var(--control);
+  height: var(--control);
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+  cursor: pointer;
+}
+
+.fab svg {
+  width: 22px; height: 22px;
+  fill: none;
+  stroke: var(--navy);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+.fab:active { transform: scale(0.95); }
+.fab.is-busy { opacity: 0.6; }
+.fab.is-busy svg { animation: spin 1.1s linear infinite; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.leaflet-bottom.leaflet-right { right: auto; left: 0; }
+
+.leaflet-control-attribution {
+  margin-left: calc(var(--safe-left) + 6px) !important;
+  margin-bottom: 6px !important;
+  padding: 2px 6px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+  color: var(--ink-soft);
+  font-family: var(--sans);
+  font-size: 10px;
+}
+
+.leaflet-control-attribution a { color: var(--ink-soft); }
+
+.leaflet-tooltip.stop-tip {
+  padding: 5px 9px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--navy);
+  color: var(--surface);
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 500;
+  box-shadow: var(--shadow-soft);
+}
+
+.leaflet-tooltip.stop-tip::before { border-top-color: var(--navy); }
+
+/* ---------- Barra delle schede ---------- */
+
+.tabs {
+  position: relative;
+  flex: 0 0 auto;
+  z-index: 700;
+  display: flex;
+  height: calc(var(--tabs-h) + var(--safe-bottom));
+  padding: 0 var(--safe-right) var(--safe-bottom) var(--safe-left);
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border: 0;
+  background: none;
+  color: var(--ink-soft);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tab svg {
+  width: 23px; height: 23px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tab.is-on { color: var(--live); }
+
+/* ---------- Fermate: ricerca ---------- */
+
+.list-head {
+  position: sticky;
+  top: calc(-1 * var(--top-clear));
+  z-index: 2;
+  margin: calc(-1 * var(--top-clear)) calc(-1 * (var(--safe-right) + var(--gutter))) 0
+    calc(-1 * (var(--safe-left) + var(--gutter)));
+  padding: var(--top-clear) calc(var(--safe-right) + var(--gutter)) 12px
+    calc(var(--safe-left) + var(--gutter));
+  background: var(--bg);
+}
+
+.search { position: relative; display: block; }
+
+.search-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  width: 18px; height: 18px;
+  transform: translateY(-50%);
+  fill: none;
+  stroke: var(--ink-soft);
+  stroke-width: 2;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+
+.search input {
+  -webkit-user-select: text;
+  user-select: text;
+  width: 100%;
+  height: 46px;
+  padding: 0 14px 0 40px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 16px;
+}
+
+.search input::placeholder { color: var(--ink-soft); }
+.search input:focus { outline: 2px solid var(--live); outline-offset: 0; border-color: transparent; }
+
+.chips {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  padding-bottom: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.chips::-webkit-scrollbar { display: none; }
+
+.chip {
+  flex: 0 0 auto;
+  padding: 7px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--ink-soft);
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.chip.is-on { background: var(--navy); border-color: var(--navy); color: var(--surface); }
+
+.section-note { margin: 4px 2px 10px; color: var(--ink-soft); font-size: 13px; }
+
+/* ---------- Elenchi di fermate e luoghi ---------- */
+
+.stop-list {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.stop-list:empty { display: none; }
+.stop-list li + li .stop-row { border-top: 1px solid var(--line); }
+
+.stop-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 13px 14px;
+  border: 0;
+  background: none;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.stop-row:active { background: var(--surface-2); }
+
+.badge {
+  flex: 0 0 auto;
+  min-width: 54px;
+  padding: 5px 7px;
+  border-radius: 9px;
+  background: var(--bus);
+  color: var(--ink);
+  font-family: var(--condensed);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-align: center;
+}
+
+.badge.tone-ma { background: var(--ma); color: #241203; }
+.badge.tone-mb { background: var(--mb); color: #051426; }
+.badge.tone-mc { background: var(--mc); color: #04170a; }
+.badge.tone-cotral { background: #1b2e4f; color: #ffffff; font-size: 12px; letter-spacing: 0.04em; }
+.badge.tone-place { background: var(--surface-2); color: var(--ink-soft); }
+
+/* Le preferite sono sempre gialle, qualunque sia la linea o l'operatore. */
+.badge.is-favorite { background: #f2c230; color: #2b2100; }
+
+.badge svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.9; vertical-align: -3px; }
+
+.stop-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stop-name small { display: block; color: var(--ink-soft); font-size: 12.5px; font-weight: 400; }
+.stop-star { color: var(--star); font-size: 15px; }
+.stop-distance { flex: 0 0 auto; color: var(--ink-soft); font-size: 13px; font-variant-numeric: tabular-nums; }
+
+.list-empty {
+  margin: 24px auto;
+  max-width: 30ch;
+  text-align: center;
+  color: var(--ink-soft);
+  font-size: 15px;
+}
+
+/* ---------- Impostazioni ---------- */
+
+.card {
+  margin-bottom: 12px;
+  padding: 15px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.card h3 { font-size: 16px; }
+.card-sub { margin: 5px 0 0; color: var(--ink-soft); font-size: 14px; max-width: 48ch; }
+.card-note { margin: 12px 0 0; color: var(--ink-soft); font-size: 13px; max-width: 48ch; }
+.options { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 13px; }
+
+.legend { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 12px; }
+
+.legend li {
+  display: grid;
+  grid-template-columns: 58px 1fr;
+  gap: 12px;
+  align-items: center;
+  color: var(--ink-soft);
+  font-size: 14px;
+}
+
+.legend .eta { justify-self: start; }
+.credit { margin: 16px 0 0; text-align: center; color: var(--ink-soft); font-size: 13px; }
+
+/* ---------- Scheda della fermata ---------- */
+
+.sheet { position: fixed; inset: 0; z-index: 900; }
+.sheet-backdrop { position: absolute; inset: 0; background: rgb(8 14 26 / 46%); }
+
+.sheet-body {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: min(86%, 760px);
+  display: flex;
+  flex-direction: column;
+  padding: 8px calc(var(--safe-right) + var(--gutter)) calc(var(--safe-bottom) + 14px)
+    calc(var(--safe-left) + var(--gutter));
+  border-radius: 28px 28px 0 0;
+  background: var(--surface);
+  box-shadow: var(--shadow-sheet);
+  animation: rise 0.26s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@keyframes rise { from { transform: translateY(22px); opacity: 0.4; } to { transform: none; opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet-body, .panel { animation: none !important; }
+  .fab.is-busy svg { animation: none; }
+  .skeleton { animation: none; }
+}
+
+.sheet-grab {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 4px;
+  margin: 2px auto 12px;
+  border-radius: var(--radius-pill);
+  background: var(--line);
+}
+
+.panel { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+#panel-trip { animation: slide-in 0.22s cubic-bezier(0.22, 0.61, 0.36, 1); }
+
+@keyframes slide-in { from { transform: translateX(18px); opacity: 0.4; } to { transform: none; opacity: 1; } }
+
+.sheet-head { flex: 0 0 auto; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.sheet-heading { min-width: 0; }
+.sheet-head h2, .trip-title h2 { font-size: 21px; line-height: 1.2; }
+.sheet-head p, .trip-title p { margin: 3px 0 0; color: var(--ink-soft); font-size: 13px; }
+.sheet-actions { display: flex; gap: 8px; }
+
+.sheet-status {
+  flex: 0 0 auto;
+  margin: 12px 0 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.icon-button {
+  width: 38px; height: 38px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-2);
+  cursor: pointer;
+}
+
+.icon-button svg {
+  width: 19px; height: 19px;
+  fill: none;
+  stroke: var(--ink-soft);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.icon-button.is-on svg { fill: var(--star); stroke: var(--star); }
+
+.back-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 38px;
+  padding: 0 10px 0 4px;
+  border: 0;
+  background: none;
+  color: var(--live);
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.back-button svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- Partenze ---------- */
+
+.departures {
+  flex: 1 1 auto;
+  min-height: 0;
+  list-style: none;
+  margin: 6px 0 12px;
+  padding: 0 6px 0 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
+}
+
+.departures li { border-bottom: 1px solid var(--line); }
+.departures li:last-child { border-bottom: 0; }
+
+.departure {
+  display: grid;
+  grid-template-columns: 56px 1fr auto 12px;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 2px;
+  border: 0;
+  background: none;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.departure:active { background: var(--surface-2); }
+
+.chevron { width: 12px; height: 12px; fill: none; stroke: var(--ink-soft); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; opacity: 0.7; }
+
+.line {
+  padding: 6px 4px;
+  border-radius: 9px;
+  background: var(--bus);
+  color: var(--ink);
+  font-family: var(--condensed);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-align: center;
+}
+
+.line.tone-ma { background: var(--ma); color: #241203; }
+.line.tone-mb { background: var(--mb); color: #051426; }
+.line.tone-mc { background: var(--mc); color: #04170a; }
+.line.tone-cotral { background: #1b2e4f; color: #ffffff; }
+
+.destination {
+  min-width: 0;
+  font-size: 16px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.eta {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  color: var(--scheduled);
+  font-family: var(--condensed);
+  font-variant-numeric: tabular-nums;
+}
+
+.eta-value { font-size: 25px; font-weight: 700; line-height: 1; }
+.eta-unit { font-size: 13px; font-weight: 600; }
+
+/* Il blu, e il pallino accanto per chi il colore non lo distingue, dicono che il dato e' vero. */
+.eta.is-live { color: var(--live); }
+
+.eta.is-live::before {
+  content: "";
+  width: 7px; height: 7px;
+  margin-right: 2px;
+  border-radius: 50%;
+  background: currentColor;
+  align-self: center;
+}
+
+.eta.is-guess::before { content: "~"; margin-right: 1px; font-size: 18px; font-weight: 600; }
+
+.departure.is-loading { grid-template-columns: 56px 1fr 52px; cursor: default; }
+
+.skeleton {
+  height: 14px;
+  border-radius: 7px;
+  background: linear-gradient(90deg, var(--surface-2), var(--line), var(--surface-2));
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+.skeleton-line { height: 30px; }
+.skeleton-text { width: 70%; }
+.skeleton-eta { height: 24px; }
+
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+.primary {
+  flex: 0 0 auto;
+  width: 100%;
+  padding: 14px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--navy);
+  color: var(--surface);
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.primary:disabled { opacity: 0.55; }
+
+/* ---------- Fermate successive di una corsa ---------- */
+
+.trip-title { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; margin-top: 10px; }
+.trip-title .line { flex: 0 0 auto; min-width: 56px; }
+
+.trip-stops {
+  --dot: var(--scheduled);
+  flex: 1 1 auto;
+  min-height: 0;
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0 6px 4px 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.trip-stops.tone-ma { --dot: var(--ma); }
+.trip-stops.tone-mb { --dot: var(--mb); }
+.trip-stops.tone-mc { --dot: var(--mc); }
+.trip-stops.tone-cotral { --dot: #3a5a92; }
+.trip-stops.tone-bus { --dot: var(--navy); }
+
+/* La corsa si legge come una linea della metro: un filo verticale con un pallino per fermata. */
+.trip-stop {
+  position: relative;
+  display: grid;
+  grid-template-columns: 22px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 6px 2px;
+}
+
+.trip-stop::before {
+  content: "";
+  position: absolute;
+  left: 11px;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  margin-left: -1.5px;
+  background: var(--dot);
+  opacity: 0.35;
+}
+
+.trip-stop:first-child::before { top: 50%; }
+.trip-stop:last-child::before { bottom: 50%; }
+
+.trip-dot {
+  position: relative;
+  z-index: 1;
+  justify-self: center;
+  width: 12px;
+  height: 12px;
+  border: 3px solid var(--dot);
+  border-radius: 50%;
+  background: var(--surface);
+}
+
+.trip-stop.is-origin .trip-dot { width: 16px; height: 16px; background: var(--dot); }
+.trip-stop.is-origin .trip-name { font-weight: 700; }
+
+.trip-name {
+  min-width: 0;
+  font-size: 15.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trip-name small { display: block; color: var(--ink-soft); font-size: 12.5px; font-weight: 400; }
+
+.trip-time { text-align: right; font-variant-numeric: tabular-nums; }
+.trip-time .eta { justify-content: flex-end; }
+.trip-time .eta-value { font-size: 21px; }
+.trip-time small { display: block; color: var(--ink-soft); font-size: 12px; }
+
+/* ---------- Avvisi ---------- */
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--tabs-h) + var(--safe-bottom) + 16px);
+  z-index: 950;
+  max-width: min(90vw, 34ch);
+  margin: 0;
+  padding: 12px 16px;
+  transform: translateX(-50%);
+  border-radius: 14px;
+  background: var(--navy);
+  color: var(--surface);
+  font-size: 14px;
+  text-align: center;
+  box-shadow: var(--shadow-soft);
+}
+
+.update-banner {
+  position: fixed;
+  top: var(--top-clear);
+  left: calc(var(--safe-left) + var(--gutter));
+  right: calc(var(--safe-right) + var(--gutter));
+  z-index: 960;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 10px 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+  animation: drop 0.28s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@keyframes drop { from { transform: translateY(-14px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+.update-banner p { flex: 1; margin: 0; font-size: 14px; line-height: 1.35; }
+.update-banner strong { display: block; font-size: 15px; }
+
+.update-button {
+  flex: 0 0 auto;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--live);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.update-close {
+  flex: 0 0 auto;
+  width: 32px; height: 32px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.update-close svg { width: 17px; height: 17px; fill: none; stroke: var(--ink-soft); stroke-width: 2; stroke-linecap: round; }
+
+/* ---------- Dove c'e' un mouse ---------- */
+
+@media (hover: hover) {
+  .stop-row:hover, .departure:hover { background: var(--surface-2); }
+  .chip:hover { border-color: var(--ink-soft); color: var(--ink); }
+  .chip.is-on:hover { color: var(--surface); }
+  .icon-button:hover, .fab:hover { border-color: var(--ink-soft); }
+  .tab:hover { color: var(--ink); }
+  .tab.is-on:hover { color: var(--live); }
+  .primary:hover:not(:disabled) { filter: brightness(1.08); }
+}
+
+/* ---------- Schermi larghi ---------- */
+
+@media (min-width: 680px) {
+  .view-scroll > * { max-width: 640px; margin-left: auto; margin-right: auto; }
+  .list-head { margin-left: 0; margin-right: 0; }
+
+  .sheet-body {
+    left: 50%;
+    right: auto;
+    width: min(560px, 100%);
+    transform: translateX(-50%);
+  }
+
+  @keyframes rise {
+    from { transform: translate(-50%, 22px); opacity: 0.4; }
+    to { transform: translateX(-50%); opacity: 1; }
+  }
+}
+
+/* ---------- Rullo ore e minuti ---------- */
+
+.wheel {
+  --item: 40px;
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  height: calc(var(--item) * 5);
+  margin-top: 12px;
+}
+
+/* La fascia della scelta, dietro le due colonne. */
+.wheel-band {
+  position: absolute;
+  z-index: -1;
+  top: calc(var(--item) * 2);
+  left: 50%;
+  width: min(100%, 250px);
+  height: var(--item);
+  transform: translateX(-50%);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+
+.wheel-col {
+  width: 118px;
+  height: 100%;
+  padding: calc(var(--item) * 2) 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-snap-type: y mandatory;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  -webkit-mask-image: linear-gradient(transparent, #000 32%, #000 68%, transparent);
+  mask-image: linear-gradient(transparent, #000 32%, #000 68%, transparent);
+  border-radius: 12px;
+}
+
+.wheel-col::-webkit-scrollbar { display: none; }
+.wheel-col:focus-visible { outline: 2px solid var(--live); outline-offset: 2px; }
+
+.wheel-item {
+  height: var(--item);
+  display: grid;
+  place-items: center;
+  scroll-snap-align: center;
+  color: var(--ink-soft);
+  font-size: 19px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.wheel-item.is-on { color: var(--ink); }
+.wheel-item.is-off { opacity: 0.3; }
+
+.wheel-summary { margin: 10px 0 0; text-align: center; color: var(--ink-soft); font-size: 14px; }
+.wheel-summary strong { color: var(--ink); font-weight: 600; }
+
+/* ================================================================== *
+ * Navigazione: "Dove vuoi andare?" -> percorsi -> percorso sulla mappa
+ * ================================================================== */
+
+/* Barra sulla mappa. Sta sotto la soglia alta (--top-clear), come ogni scritta in alto. */
+.map-search {
+  position: absolute;
+  top: var(--top-clear);
+  left: calc(var(--safe-left) + var(--gutter));
+  right: calc(var(--safe-right) + var(--gutter));
+  z-index: 520;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: var(--control);
+  padding: 0 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+  color: var(--ink-soft);
+  font-size: 16px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.map-search svg { flex: 0 0 auto; width: 19px; height: 19px; fill: none; stroke: var(--ink-soft); stroke-width: 2; stroke-linecap: round; }
+.map-search:active { transform: scale(0.99); }
+
+/* L'avviso "Avvicina la mappa" scende sotto la barra di ricerca. */
+.map-hint { top: calc(var(--top-clear) + var(--control) + 10px); }
+
+/* ---------- Pannello a tutto schermo ---------- */
+
+/* Sfondo = colore della striscia dell'orologio (--surface coincide con --bar nei due temi):
+   aperto sopra tutto, iOS colora la striscia con lui e resta coerente. */
+.nav-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 850;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+}
+
+.nav-page { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+
+.nav-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 6px calc(var(--safe-right) + var(--gutter)) calc(var(--safe-bottom) + 24px)
+    calc(var(--safe-left) + var(--gutter));
+  background: var(--bg);
+}
+
+.nav-search-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: var(--top-clear) calc(var(--safe-right) + var(--gutter)) 12px calc(var(--safe-left) + var(--gutter));
+  border-bottom: 1px solid var(--line);
+}
+
+.nav-search-field { flex: 1; }
+.nav-search-field input { background: var(--surface-2); }
+
+.nav-section {
+  margin: 18px 2px 8px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.nav-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.nav-list li + li .nav-row { border-top: 1px solid var(--line); }
+
+.nav-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 56px;
+  padding: 10px 14px;
+  border: 0;
+  background: none;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.nav-row:active { background: var(--surface-2); }
+
+.nav-row-icon {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--ink-soft);
+}
+
+.nav-row-icon svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.nav-row-icon.is-here { background: color-mix(in srgb, var(--live) 14%, transparent); color: var(--live); }
+.nav-row-icon.tone-ma { background: var(--ma); color: #241203; }
+.nav-row-icon.tone-mb { background: var(--mb); color: #051426; }
+.nav-row-icon.tone-mc { background: var(--mc); color: #04170a; }
+.nav-row-icon.tone-stop { background: var(--navy); color: var(--surface); }
+
+.nav-row-text { flex: 1; min-width: 0; }
+.nav-row-title { display: block; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nav-row-sub { display: block; color: var(--ink-soft); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.nav-empty { margin: 28px auto; max-width: 32ch; text-align: center; color: var(--ink-soft); font-size: 15px; }
+
+/* ---------- Pianifica un viaggio ---------- */
+
+.nav-plan-head {
+  flex: 0 0 auto;
+  padding: var(--top-clear) calc(var(--safe-right) + var(--gutter)) 12px calc(var(--safe-left) + var(--gutter));
+  border-bottom: 1px solid var(--line);
+}
+
+.nav-plan-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.nav-plan-bar h2 { font-size: 18px; }
+.round-spacer { width: 44px; }
+
+.round-button {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.round-button svg { width: 20px; height: 20px; fill: none; stroke: var(--ink); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+.od-box { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+
+.od-fields {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.od-field {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 48px;
+  padding: 0 14px;
+  border: 0;
+  background: none;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.od-field + .od-field { border-top: 1px solid var(--line); }
+.od-dot { flex: 0 0 auto; width: 12px; height: 12px; border: 3px solid var(--ink-soft); border-radius: 50%; }
+.od-pin { flex: 0 0 auto; width: 12px; height: 12px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); background: #e0572e; }
+.od-label { flex: 0 0 auto; width: 14px; color: var(--ink-soft); font-size: 12px; font-weight: 600; }
+.od-text { flex: 1; min-width: 0; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.od-text.is-empty { color: var(--ink-soft); font-weight: 400; }
+
+.nav-actions { display: flex; justify-content: space-between; gap: 10px; margin-top: 12px; }
+
+.pill-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pill-button svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+.nav-sort { margin-top: 12px; }
+
+/* ---------- Schede dei percorsi ---------- */
+
+.trip-card {
+  display: grid;
+  grid-template-columns: 78px 1fr;
+  width: 100%;
+  margin: 10px 0 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  text-align: left;
+  font: inherit;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.trip-card:active { background: var(--surface-2); }
+
+/* Colonna sinistra: durata e orari, come in Moovit. */
+.trip-time {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 14px 10px 14px 14px;
+  border-right: 1px solid var(--line);
+  background: var(--surface-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.trip-duration { font-family: var(--condensed); font-size: 24px; font-weight: 700; line-height: 1; }
+.trip-duration small { font-family: var(--sans); font-size: 12px; font-weight: 600; color: var(--ink-soft); }
+.trip-clock { margin-top: 6px; color: var(--ink-soft); font-size: 12.5px; line-height: 1.3; }
+.trip-clock strong { display: block; color: var(--ink); font-size: 14px; }
+
+.trip-body { min-width: 0; padding: 12px 14px; }
+
+.legs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+.leg-sep { width: 10px; height: 10px; fill: none; stroke: var(--ink-soft); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; opacity: 0.6; }
+
+.leg-walk { display: inline-flex; align-items: center; gap: 2px; color: var(--ink-soft); font-size: 12px; font-weight: 600; }
+.leg-walk svg, .leg-chip svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+.leg-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  border-radius: 7px;
+  background: var(--bus);
+  color: var(--ink);
+  font-family: var(--condensed);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.leg-chip.tone-ma { background: var(--ma); color: #241203; }
+.leg-chip.tone-mb { background: var(--mb); color: #051426; }
+.leg-chip.tone-mc { background: var(--mc); color: #04170a; }
+.leg-chip.tone-rail { background: #b4235a; color: #ffffff; }
+
+.trip-depart { margin: 8px 0 0; color: var(--ink-soft); font-size: 13.5px; line-height: 1.35; }
+.trip-depart strong { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.trip-depart .is-live { color: var(--live); }
+.trip-depart .is-live::before { content: ""; display: inline-block; width: 7px; height: 7px; margin: 0 4px 1px 0; border-radius: 50%; background: currentColor; }
+.trip-extra { margin: 4px 0 0; color: var(--ink-soft); font-size: 12.5px; }
+
+.direct-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+.direct-card {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.direct-card strong { display: block; font-family: var(--condensed); font-size: 22px; }
+.direct-card span { display: flex; align-items: center; gap: 6px; margin-top: 4px; color: var(--ink-soft); font-size: 13px; }
+.direct-card svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+.nav-more { display: block; margin: 16px auto 0; }
+.nav-credit { margin: 18px 0 0; text-align: center; color: var(--ink-soft); font-size: 12px; }
+.nav-credit a { color: inherit; }
+
+.trip-skeleton { height: 96px; margin-top: 10px; border-radius: var(--radius); }
+
+/* ---------- Scelta dell'orario ---------- */
+
+.time-body { height: auto; gap: 4px; }
+.time-body h2 { font-size: 19px; }
+.time-field { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; font-weight: 600; }
+
+.time-field input {
+  min-width: 140px;
+  height: 46px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--ink);
+  font: inherit;
+  font-size: 18px;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.time-plus { align-self: flex-start; margin: 10px 0 4px; }
+.time-body .primary { margin-top: 14px; }
+
+/* ---------- Percorso sulla mappa ---------- */
+
+.route-sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1100;
+  display: flex;
+  flex-direction: column;
+  height: 52%;
+  padding: 10px calc(var(--safe-right) + var(--gutter)) 0 calc(var(--safe-left) + var(--gutter));
+  border-radius: 24px 24px 0 0;
+  background: var(--surface);
+  box-shadow: var(--shadow-sheet);
+}
+
+.route-sheet-head { display: flex; align-items: center; justify-content: space-between; }
+.route-summary { margin-top: 6px; }
+.route-summary .route-total { display: flex; align-items: baseline; gap: 10px; }
+.route-summary .route-total strong { font-family: var(--condensed); font-size: 26px; }
+.route-summary .route-total span { color: var(--ink-soft); font-size: 14px; font-variant-numeric: tabular-nums; }
+.route-summary .legs { margin-top: 8px; }
+
+.route-steps {
+  flex: 1 1 auto;
+  min-height: 0;
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0 4px 16px 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Le tappe si leggono come una linea: pallino per ogni punto, tratto colorato fra un punto e l'altro. */
+.step {
+  --tone: var(--ink-soft);
+  position: relative;
+  display: grid;
+  grid-template-columns: 24px 1fr auto;
+  gap: 4px 10px;
+  padding: 8px 0;
+}
+
+.step-rail {
+  position: absolute;
+  left: 11px;
+  top: 22px;
+  bottom: -8px;
+  width: 4px;
+  margin-left: -2px;
+  border-radius: 2px;
+  background: var(--tone);
+}
+
+.step.is-walk .step-rail { background: none; border-left: 4px dotted var(--scheduled); width: 0; margin-left: -2px; }
+.step:last-child .step-rail { display: none; }
+
+.step-dot {
+  position: relative;
+  z-index: 1;
+  justify-self: center;
+  width: 14px;
+  height: 14px;
+  margin-top: 4px;
+  border: 3px solid var(--tone);
+  border-radius: 50%;
+  background: var(--surface);
+}
+
+.step.is-end .step-dot { border-radius: 50% 50% 50% 0; transform: rotate(-45deg); border: 0; background: #e0572e; }
+
+.step-main { min-width: 0; }
+.step-place { font-weight: 600; }
+.step-place.is-link { color: var(--live); cursor: pointer; }
+.step-note { margin-top: 2px; color: var(--ink-soft); font-size: 13.5px; }
+.step-line { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.step-line span:last-child { min-width: 0; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.step-toggle {
+  margin-top: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--live);
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.step-stops { list-style: none; margin: 6px 0 0; padding: 0; color: var(--ink-soft); font-size: 13.5px; }
+.step-stops li { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; }
+.step-time { color: var(--ink); font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+.step-time.is-live { color: var(--live); }
+
+@media (hover: hover) {
+  .nav-row:hover, .trip-card:hover, .direct-card:hover { background: var(--surface-2); }
+  .pill-button:hover, .round-button:hover, .map-search:hover { border-color: var(--ink-soft); }
+}
+
+@media (min-width: 680px) {
+  .nav-panel { left: 50%; right: auto; width: min(640px, 100%); transform: translateX(-50%); box-shadow: var(--shadow-sheet); }
+  .route-sheet { left: 50%; right: auto; width: min(560px, 100%); transform: translateX(-50%); }
+  .map-search { left: 50%; right: auto; width: min(560px, calc(100% - 2 * var(--gutter))); transform: translateX(-50%); }
+}
+
+/* Tasto solo testo, per "Annulla" e simili. */
+.text-button {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--live);
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
