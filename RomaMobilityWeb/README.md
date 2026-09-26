@@ -88,7 +88,7 @@ ogni volta che riapri l'app e ogni mezz'ora mentre e' aperta.
 Ogni volta che pubblichi:
 
 1. in `app.js` cambia `APP_VERSION` e scrivi la novita' in `APP_NEWS`;
-2. in `sw.js` alza `CACHE_VERSION` (ora e' `v21`).
+2. in `sw.js` alza `CACHE_VERSION` (ora e' `v22`).
 
 **Unica eccezione:** il colore della barra dell'orologio iOS lo legge solo quando aggiungi il sito
 alla schermata Home. Con questa versione la barra e' cambiata, quindi l'icona va tolta e rimessa
@@ -148,3 +148,9 @@ python -m http.server 5191 --directory .
 
 Poi apri http://localhost:5191. In locale la funzione Netlify non c'e': il sito se ne accorge da
 solo (riceve un 404) e passa alla chiamata diretta a Transitland.
+
+## Codice aperto
+
+Il codice e' pubblicato su https://github.com/pietrosaviotti012-jpg/roma-mobility con licenza MIT
+(file LICENSE): e' una delle condizioni di Transitous. A ogni pubblicazione su Netlify vanno caricati
+gli stessi file anche li'.
