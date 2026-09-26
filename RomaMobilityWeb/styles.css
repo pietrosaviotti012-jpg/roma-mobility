@@ -35,11 +35,15 @@
   --radius: 16px;
   --radius-pill: 999px;
   --safe-top: env(safe-area-inset-top, 0px);
-  /* Soglia alta: nessuna scritta sopra questa linea. Su iOS 26 la zona dell'orologio e' sfocata e la
-     sfocatura scende oltre la barra (e' un effetto del sistema, la pagina non puo' toglierlo).
-     Con l'isola dinamica (59 px) la soglia cade a 121 px, mezzo centimetro sotto la prima versione;
-     senza barra (browser normale) resta a 14 px. Tutto cio' che sta in alto parte da qui. */
-  --top-clear: max(14px, calc(var(--safe-top) * 2.05));
+  /* Su iOS 26 la pagina passa sotto l'orologio e iOS sfoca tutto cio' che ci finisce sotto (mappa e
+     scritte comprese): l'effetto e' del sistema e la pagina non lo puo' spegnere. Allora in quella
+     zona non mettiamo niente: l'app comincia sotto una fascia di colore pieno (--top-band) e iOS
+     sfoca solo quel colore, cioe' non si vede. */
+  --top-band: calc(var(--safe-top) + 6px);
+  /* Distanza dal bordo alto per il contenuto delle sezioni (che comincia gia' sotto la fascia)... */
+  --top-clear: 14px;
+  /* ...e per i pannelli a tutto schermo, che partono dal bordo del telefono. */
+  --top-overlay: calc(var(--top-band) + 14px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
@@ -110,6 +114,8 @@ body {
   display: flex;
   flex-direction: column;
   height: 100dvh;
+  /* La fascia sotto l'orologio: solo colore pieno, niente mappa ne' scritte da sfocare. */
+  padding-top: var(--top-band);
   background: var(--bar);
   color: var(--ink);
   font-family: var(--sans);
@@ -794,7 +800,7 @@ main {
 
 .update-banner {
   position: fixed;
-  top: var(--top-clear);
+  top: var(--top-overlay);
   left: calc(var(--safe-left) + var(--gutter));
   right: calc(var(--safe-right) + var(--gutter));
   z-index: 960;
@@ -992,7 +998,7 @@ main {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: var(--top-clear) calc(var(--safe-right) + var(--gutter)) 12px calc(var(--safe-left) + var(--gutter));
+  padding: var(--top-overlay) calc(var(--safe-right) + var(--gutter)) 12px calc(var(--safe-left) + var(--gutter));
   border-bottom: 1px solid var(--line);
 }
 
@@ -1062,7 +1068,7 @@ main {
 
 .nav-plan-head {
   flex: 0 0 auto;
-  padding: var(--top-clear) calc(var(--safe-right) + var(--gutter)) 12px calc(var(--safe-left) + var(--gutter));
+  padding: var(--top-overlay) calc(var(--safe-right) + var(--gutter)) 12px calc(var(--safe-left) + var(--gutter));
   border-bottom: 1px solid var(--line);
 }
 
@@ -1261,10 +1267,13 @@ main {
   flex-direction: column;
   height: 52%;
   padding: 10px calc(var(--safe-right) + var(--gutter)) 0 calc(var(--safe-left) + var(--gutter));
-  border-radius: 24px 24px 0 0;
+  border-top: 1px solid var(--line);
   background: var(--surface);
-  box-shadow: var(--shadow-sheet);
 }
+
+/* Con un percorso aperto la mappa si ferma dove comincia la lista: due sezioni separate, e
+   scorrendo la lista non si trascina la mappa che prima stava sotto. */
+.view-map.has-route #map { bottom: 52%; }
 
 .route-sheet-head { display: flex; align-items: center; justify-content: space-between; }
 .route-summary { margin-top: 6px; }

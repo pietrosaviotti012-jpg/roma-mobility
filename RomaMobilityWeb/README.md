@@ -88,7 +88,7 @@ ogni volta che riapri l'app e ogni mezz'ora mentre e' aperta.
 Ogni volta che pubblichi:
 
 1. in `app.js` cambia `APP_VERSION` e scrivi la novita' in `APP_NEWS`;
-2. in `sw.js` alza `CACHE_VERSION` (ora e' `v22`).
+2. in `sw.js` alza `CACHE_VERSION` (ora e' `v23`).
 
 **Unica eccezione:** il colore della barra dell'orologio iOS lo legge solo quando aggiungi il sito
 alla schermata Home. Con questa versione la barra e' cambiata, quindi l'icona va tolta e rimessa
@@ -109,13 +109,13 @@ a meno che in cima ci sia un elemento `position: fixed` largo quanto lo schermo 
 `theme-color` resta per iOS fino al 18 e per Android. Non aggiungere elementi `fixed` a tutta
 larghezza che tocchino il bordo alto, o la striscia smette di seguire il tema.
 
-## La soglia in alto
+## La fascia sotto l'orologio
 
-Su iOS 26 la zona dell'orologio e' sfocata, e la sfocatura scende un po' oltre la barra. In
-`styles.css` c'e' una sola variabile, `--top-clear`, che fissa la linea sotto cui deve stare
-ogni scritta: una volta e mezza il margine di sicurezza del telefono (88 px con l'isola dinamica,
-14 px nel browser normale). Avviso sulla mappa, titoli delle sezioni, ricerca e riquadro di
-aggiornamento partono tutti da li': se aggiungi qualcosa in alto, usa `var(--top-clear)`.
+Su iOS 26 la pagina passa sotto l'orologio e iOS sfoca tutto cio' che ci finisce sotto: e' un effetto
+del sistema e non si puo' spegnere. Per questo l'app comincia **sotto** una fascia di colore pieno
+(`--top-band` in styles.css, alta quanto la zona dell'orologio): iOS sfoca un colore uniforme e la
+sfocatura non si vede. Non mettere niente in quella fascia; i pannelli a tutto schermo partono da
+`--top-overlay`.
 
 ## La posizione
 

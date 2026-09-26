@@ -38,8 +38,8 @@ const STORAGE = {
 };
 
 // Cambia a ogni pubblicazione: chi apre l'app dopo un aggiornamento vede cosa c'e' di nuovo.
-const APP_VERSION = "2026.09.26-3";
-const APP_NEWS = "La ricerca del percorso riparte sempre pulita e ricorda l’ultimo tragitto; l’orario si sceglie con un rullo.";
+const APP_VERSION = "2026.09.26-4";
+const APP_NEWS = "In alto niente più sfocatura sulle scritte, e col percorso aperto mappa e tappe scorrono ognuna per conto suo.";
 
 /* ------------------------------------------------------------------ *
  * Utilita'
@@ -2342,6 +2342,8 @@ function clearRoute() {
   nav.routeLayer = null;
   nav.shown = null;
   $("#route-sheet").hidden = true;
+  $("#view-map").classList.remove("has-route");
+  window.setTimeout(() => map.invalidateSize(), 0);
   $("#nav-open").hidden = false;
   $("#btn-gps").hidden = false;
   refreshMarkers();
@@ -2379,8 +2381,8 @@ function drawRoute(itinerary) {
 
   layer.addTo(map);
   nav.routeLayer = layer;
-  const sheetHeight = $("#route-sheet").offsetHeight || window.innerHeight * 0.5;
-  map.fitBounds(bounds, { paddingTopLeft: [30, 40], paddingBottomRight: [30, sheetHeight + 20] });
+  // La mappa ora occupa solo la parte sopra la lista: basta un margine uguale su tutti i lati.
+  map.fitBounds(bounds, { padding: [30, 30] });
 }
 
 function stepHtml({ cls, tone, place, placeStop, note, time, live, extra }) {
@@ -2481,6 +2483,7 @@ function showItinerary(itinerary) {
     "</span></div>" + (itinerary.legs.some(isTransit) ? legsHtml(itinerary) : "");
   renderSteps(itinerary);
   $("#route-sheet").hidden = false;
+  $("#view-map").classList.add("has-route");
   // La mappa si ridisegna dopo che il foglio ha preso la sua altezza.
   window.setTimeout(() => {
     map.invalidateSize();
@@ -2613,6 +2616,26 @@ function wireNavigation() {
     showPlan(false);
   });
   $("#route-close").addEventListener("click", clearRoute);
+
+  const sheet = $("#route-sheet");
+  L.DomEvent.disableScrollPropagation(sheet);
+  L.DomEvent.disableClickPropagation(sheet);
+  let unlockTimer = null;
+  const lockMap = () => {
+    window.clearTimeout(unlockTimer);
+    if (map && map.dragging.enabled()) map.dragging.disable();
+  };
+  // Sblocco con un attimo di ritardo: lo scorrimento per inerzia continua dopo che il dito si alza.
+  const unlockMap = () => {
+    window.clearTimeout(unlockTimer);
+    unlockTimer = window.setTimeout(() => map && map.dragging.enable(), 700);
+  };
+  sheet.addEventListener("touchstart", lockMap, { passive: true });
+  sheet.addEventListener("pointerdown", lockMap);
+  sheet.addEventListener("touchend", unlockMap);
+  sheet.addEventListener("touchcancel", unlockMap);
+  sheet.addEventListener("pointerup", unlockMap);
+  sheet.addEventListener("pointercancel", unlockMap);
 }
 
 boot();
