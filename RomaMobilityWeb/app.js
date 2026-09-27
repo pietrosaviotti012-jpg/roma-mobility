@@ -38,8 +38,8 @@ const STORAGE = {
 };
 
 // Cambia a ogni pubblicazione: chi apre l'app dopo un aggiornamento vede cosa c'e' di nuovo.
-const APP_VERSION = "2026.09.26-6";
-const APP_NEWS = "Nuovo tasto «Avvia»: indicazioni passo passo sulla mappa e avvisi anche a schermo spento (vedi Impostazioni). Indirizzi con il numero civico trovati meglio e molti più percorsi.";
+const APP_VERSION = "2026.09.27-1";
+const APP_NEWS = "Tutti i numeri civici di Roma (archivio ufficiale ANNCSU), ricerca per locali e categorie con la distanza, e i tragitti con le stesse fermate uniti in una scheda con gli orari di tutte le linee.";
 
 /* ------------------------------------------------------------------ *
  * Utilita'
@@ -2021,6 +2021,11 @@ const ICON_HOME = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11 12
 const ICON_WORK = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="7.5" width="17" height="12" rx="2"/><path d="M9 7.5V5.5h6v2M3.5 12.5h17"/></svg>';
 const ICON_STAR = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3.6 2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.8l5.9-.9Z"/></svg>';
 const ICON_EDIT = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16Z"/><path d="m13.5 6.5 4 4"/></svg>';
+const ICON_STREET = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 21 10 3M17 21 14 3M12 6v2M12 11v2M12 16v2"/></svg>';
+const ICON_FOOD = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v8M5 3v5a2 2 0 0 0 4 0V3M7 11v10M17 21V3c-2 1-3 4-3 8h3"/></svg>';
+const ICON_HEALTH = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M12 8v8M8 12h8"/></svg>';
+const ICON_SCHOOL = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m2.5 9 9.5-5 9.5 5-9.5 5Z"/><path d="M6.5 11v5c3 2 8 2 11 0v-5M21.5 9v5"/></svg>';
+const ICON_SHOP = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8h14l-1 12H6Z"/><path d="M9 8a3 3 0 0 1 6 0"/></svg>';
 const ICON_ROUTE = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="6" r="2.2"/><path d="M8 18h6a3.5 3.5 0 0 0 0-7h-4a3.5 3.5 0 0 1 0-7h6"/></svg>';
 
 function readSaved() {
@@ -2039,7 +2044,7 @@ function writeSaved(saved) {
 
 function cleanPoint(place) {
   if (!place || place.here) return { here: true };
-  return { name: place.name, sub: place.sub || "", lat: place.lat, lon: place.lon, kind: place.kind || "place", tone: place.tone || "" };
+  return { name: place.name, sub: place.sub || "", lat: place.lat, lon: place.lon, kind: place.kind || "place", tone: place.tone || "", category: place.category || "" };
 }
 
 function samePlace(a, b) {
@@ -2162,6 +2167,13 @@ function placeIcon(place) {
   if (place.trip) return { cls: "is-fav", svg: ICON_ROUTE };
   if (place.saved) return { cls: "is-fav", svg: ICON_STAR };
   if (place.kind === "stop") return { cls: place.tone || "tone-stop", svg: place.tone && place.tone !== "tone-stop" ? ICON.metro : ICON.bus };
+  if (place.kind === "address") return { cls: "", svg: ICON_HOME };
+  if (place.kind === "street") return { cls: "", svg: ICON_STREET };
+  const category = String(place.category || "");
+  if (/restaurant|fast_food|cafe|bar|pub|ice_cream|bakery|food/.test(category)) return { cls: "", svg: ICON_FOOD };
+  if (/pharmacy|hospital|clinic|doctor|dentist/.test(category)) return { cls: "", svg: ICON_HEALTH };
+  if (/school|university|college|kindergarten|library/.test(category)) return { cls: "", svg: ICON_SCHOOL };
+  if (/shop|supermarket|mall|store|marketplace/.test(category)) return { cls: "", svg: ICON_SHOP };
   return { cls: "", svg: ICON.pin };
 }
 
@@ -2306,9 +2318,131 @@ function streetWords(text) {
 
 // "Via Prenestina 300", "via prenestina, 300", "via prenestina n. 300/b" -> via + numero civico.
 function parseAddress(text) {
-  const match = normalizeText(text).match(/^(.*?[a-z].*?)\s+(?:n\s+)?(\d{1,4})(?:\s+[a-z])?(?:\s+\d+)?$/);
+  const match = normalizeText(text).match(/^(.*?[a-z].*?)\s+(?:n\s+)?(\d{1,4})\s*([a-z])?(?:\s+\d+)?$/);
   if (!match || !streetWords(match[1]).length) return null;
-  return { street: match[1], number: Number(match[2]) };
+  return { street: match[1], number: Number(match[2]), label: match[2] + (match[3] || "").toUpperCase() };
+}
+
+/* ---------------- numeri civici ufficiali di Roma (ANNCSU) ---------------- */
+
+// L'archivio nazionale dei numeri civici (Agenzia delle Entrate e Istat, CC BY 4.0) ha ogni civico di
+// Roma con le sue coordinate; OpenStreetMap, e quindi Transitous, ne conosce solo una parte.
+// In data/civici: vie.json (tutte le vie) e 32 file con i civici, scaricati solo quando servono.
+const CIVICI_URL = "data/civici/";
+const STREET_TYPES = new Set(["via", "viale", "piazza", "piazzale", "largo", "corso", "vicolo", "lungotevere", "circonvallazione", "borgo", "strada", "salita", "clivo", "vicolo", "galleria", "passeggiata", "rampa", "scalinata", "piazzetta", "lungomare", "traversa", "contrada", "localita"]);
+let streetIndex = null;
+const civiciShards = new Map();
+
+function loadStreetIndex() {
+  if (!streetIndex) {
+    streetIndex = fetch(CIVICI_URL + "vie.json")
+      .then((response) => {
+        if (!response.ok) throw new Error("vie " + response.status);
+        return response.json();
+      })
+      .then((rows) => rows.map(([name, shard, lat, lon]) => {
+        const words = normalizeText(name).split(" ");
+        return { name, shard, lat: lat / 1e5, lon: lon / 1e5, type: words[0], words: streetWords(name) };
+      }))
+      .catch((error) => {
+        streetIndex = null;
+        throw error;
+      });
+  }
+  return streetIndex;
+}
+
+function loadCivici(shard) {
+  if (!civiciShards.has(shard)) {
+    civiciShards.set(shard, fetch(CIVICI_URL + "civici-" + String(shard).padStart(2, "0") + ".json")
+      .then((response) => {
+        if (!response.ok) throw new Error("civici " + response.status);
+        return response.json();
+      })
+      .catch((error) => {
+        civiciShards.delete(shard);
+        throw error;
+      }));
+  }
+  return civiciShards.get(shard);
+}
+
+// Ogni civico e' scritto come differenza dal precedente, in centomillesimi di grado.
+function decodeCivici(entry) {
+  let lat = entry[0];
+  let lon = entry[1];
+  return entry[2].split(";").map((part) => {
+    const [label, delta] = part.split(":");
+    const [dLat, dLon] = delta.split(",").map(Number);
+    lat += dLat;
+    lon += dLon;
+    return { label, number: parseInt(label, 10), lat: lat / 1e5, lon: lon / 1e5 };
+  });
+}
+
+function matchStreets(index, text, limit) {
+  const typed = streetWords(text);
+  if (!typed.length || typed.join("").length < 3) return [];
+  const typedType = normalizeText(text).split(" ")[0];
+  const near = referencePoint();
+  return index
+    .map((street) => {
+      if (!typed.every((word) => street.words.some((candidate) => candidate.startsWith(word)))) return null;
+      const extra = street.words.filter((candidate) => !typed.some((word) => candidate.startsWith(word))).length;
+      const whole = typed.every((word) => street.words.includes(word));
+      let score = (whole ? 3 : 0) - extra * 1.2 - haversineMeters(near, street) / 5000;
+      if (STREET_TYPES.has(typedType)) score += typedType === street.type ? 1.5 : -1;
+      return { street, score };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map((result) => result.street);
+}
+
+function distanceNote(place) {
+  if (!state.position) return "";
+  return metersLabel(haversineMeters(state.position, place)) + " · ";
+}
+
+// Indirizzi ufficiali: "via anapo 51" -> Via Anapo 51; "via anapo" -> la via.
+async function officialAddresses(text) {
+  const address = parseAddress(text);
+  const index = await loadStreetIndex();
+  const streets = matchStreets(index, address ? address.street : text, address ? 3 : 4);
+  if (!address) {
+    return streets.map((street) => ({ name: prettyName(street.name), sub: distanceNote(street) + "Roma", lat: street.lat, lon: street.lon, kind: "street" }));
+  }
+  const results = [];
+  const typed = streetWords(address.street);
+  for (const [position, street] of streets.entries()) {
+    const shard = await loadCivici(street.shard);
+    if (!shard[street.name]) continue;
+    const numbers = decodeCivici(shard[street.name]);
+    const exact = numbers.find((item) => item.label === address.label) || numbers.find((item) => item.number === address.number);
+    const pretty = prettyName(street.name);
+    if (exact) {
+      results.push({ name: pretty + " " + exact.label, sub: distanceNote(exact) + "Roma", lat: exact.lat, lon: exact.lon, kind: "address" });
+      continue;
+    }
+    // Il civico non esiste: il piu' vicino, ma solo sulla via che hai scritto (non su "Via Capranica Prenestina").
+    const sameStreet = street.words.every((candidate) => typed.some((word) => candidate.startsWith(word)));
+    if (position > 0 || !sameStreet) continue;
+    const closest = numbers
+      .slice()
+      .sort((a, b) => Math.abs(a.number - address.number) + (a.number % 2 === address.number % 2 ? 0 : 0.5) -
+        (Math.abs(b.number - address.number) + (b.number % 2 === address.number % 2 ? 0 : 0.5)))[0];
+    if (closest) {
+      results.push({
+        name: pretty + " " + closest.label,
+        sub: "Il " + address.label + " non c’è, questo è il più vicino · Roma",
+        lat: closest.lat,
+        lon: closest.lon,
+        kind: "address",
+      });
+    }
+  }
+  return results;
 }
 
 function areaTown(item) {
@@ -2330,8 +2464,9 @@ function rankGeocode(items, text) {
       const hits = typed.filter((word) => words.some((candidate) => candidate.startsWith(word))).length;
       const extra = words.filter((candidate) => !typed.some((word) => candidate.startsWith(word))).length;
       let score = -rank * 0.3;
-      if (typed.length) score += hits === typed.length ? 6 - Math.min(extra, 3) : hits * 1.5;
-      score -= Math.min(haversineMeters(near, item) / 1000, 80) / 10;
+      if (typed.length) score += hits === typed.length ? 6 - Math.min(extra, 3) * 0.5 : hits * 1.5;
+      // Vicino conta molto (la farmacia a 200 m prima di quella a 5 km), ma in scala: da 20 a 40 km cambia poco.
+      score -= Math.log2(1 + haversineMeters(near, item) / 1000) * 1.5;
       const result = { item, score, sameStreet: hits === typed.length && typed.length > 0, extra, exact: false, nearNumber: null };
       if (address) {
         const houseNumber = String(item.houseNumber || "");
@@ -2392,11 +2527,13 @@ async function geocode(text) {
     if (!isStop && item.street && item.houseNumber && item.name.indexOf(item.street) === -1) sub = [item.street + " " + item.houseNumber, town].filter(Boolean).join(", ");
     if (address && r.nearNumber !== null && r.sameStreet && r.extra === 0) sub = "Civico più vicino al " + address.number + (town ? " · " + town : "");
     if (r === streetOnly) sub = "Civico " + address.number + " non trovato: ti porto sulla via" + (town ? " · " + town : "");
+    if (!isStop && r !== streetOnly) sub = distanceNote(item) + sub;
     return {
       name,
       sub,
       lat: item.lat,
       lon: item.lon,
+      category: item.category || "",
       kind: isStop ? "stop" : "place",
       tone: local && local.mode === "MetroStation" ? stopTone(local) : isStop ? "tone-stop" : "",
     };
@@ -2406,14 +2543,19 @@ async function geocode(text) {
   return unique;
 }
 
-function renderFound(local, remote, waiting) {
+function renderFound(local, remote, waiting, official = [], addressFirst = false) {
   const body = $("#nav-search-body");
-  const remoteOnly = remote.filter((place) => !local.some((other) => normalizeText(other.name) === normalizeText(place.name) && haversineMeters(other, place) < 400));
-  const groups = { local, remote: remoteOnly };
-  let html = "";
-  if (local.length) html += '<p class="nav-section">Suggerimenti</p><ul class="nav-list">' + local.map((p, i) => placeRow(p, i, "local", nav.settingSlot || p.slot ? null : "star")).join("") + "</ul>";
-  if (remoteOnly.length) html += '<p class="nav-section">Luoghi</p><ul class="nav-list">' + remoteOnly.map((p, i) => placeRow(p, i, "remote", nav.settingSlot ? null : "star")).join("") + "</ul>";
-  if (!local.length && !remoteOnly.length) {
+  const known = local.concat(official);
+  // Con gli indirizzi ufficiali, le vie e i civici di Transitous a Roma sono doppioni meno precisi.
+  const remoteOnly = remote.filter((place) => !known.some((other) => normalizeText(other.name) === normalizeText(place.name) && haversineMeters(other, place) < 400) &&
+    !(official.length && place.kind === "place" && !place.category && official.some((other) => haversineMeters(other, place) < 1500)));
+  const groups = { local, remote: remoteOnly, official };
+  const section = (title, list, group) => list.length
+    ? '<p class="nav-section">' + title + '</p><ul class="nav-list">' + list.map((p, i) => placeRow(p, i, group, nav.settingSlot || p.slot ? null : "star")).join("") + "</ul>"
+    : "";
+  const addresses = section("Indirizzi", official, "official");
+  let html = (addressFirst ? addresses : "") + section("Suggerimenti", local, "local") + section("Luoghi", remoteOnly, "remote") + (addressFirst ? "" : addresses);
+  if (!local.length && !remoteOnly.length && !official.length) {
     html = waiting
       ? '<div class="skeleton trip-skeleton"></div>'
       : '<p class="nav-empty">Nessun luogo con questo nome. Prova con la via, il quartiere o il nome del locale.</p>';
@@ -2434,21 +2576,41 @@ function onSearchInput() {
   renderFound(local, [], text.length >= 2);
   if (text.length < 2) return;
 
+  // "via ...", "piazza ..." o un numero civico: in cima gli indirizzi.
+  const address = parseAddress(text);
+  const addressFirst = Boolean(address) || STREET_TYPES.has(normalizeText(text).split(" ")[0]);
+  // Con un civico, dei risultati di Transitous restano solo locali, fermate e la via giusta
+  // (niente "Via Napoli 51" per "via anapo 51").
+  const relevant = (list) => address
+    ? list.filter((place) => place.kind === "stop" || place.category || matchesWords(normalizeText(place.name), streetWords(address.street)))
+    : list;
   const body = $("#nav-search-body");
   body.setAttribute("aria-busy", "true");
   geocodeTimer = window.setTimeout(async () => {
     const token = ++geocodeToken;
+    let official = [];
+    let places = [];
+    // Gli indirizzi ufficiali arrivano prima (file sul sito): si mostrano senza aspettare Transitous.
+    const officialDone = officialAddresses(text)
+      .then((list) => {
+        official = list;
+        if (token === geocodeToken) renderFound(local, places, true, official, addressFirst);
+      })
+      .catch(() => {});
     try {
-      const places = await geocode(text);
+      places = relevant(await geocode(text));
+      await officialDone;
       if (token !== geocodeToken) return;
-      renderFound(local, places, false);
+      renderFound(local, places, false, official, addressFirst);
     } catch (error) {
+      await officialDone;
       if (token !== geocodeToken) return;
-      if (!local.length) body.innerHTML = '<p class="nav-empty">La ricerca non risponde adesso. Controlla la connessione e riprova.</p>';
+      if (official.length) renderFound(local, [], false, official, addressFirst);
+      else if (!local.length) body.innerHTML = '<p class="nav-empty">La ricerca non risponde adesso. Controlla la connessione e riprova.</p>';
     } finally {
       if (token === geocodeToken) body.removeAttribute("aria-busy");
     }
-  }, 220);
+  }, 200);
 }
 
 function choosePlace(place) {
@@ -2620,10 +2782,12 @@ function walkingSeconds(itinerary) {
 function groupItineraries(list) {
   const groups = new Map();
   list.forEach((itinerary) => {
+    // Stesse fermate di salita e discesa = stesso tragitto, anche con linee diverse (come Moovit:
+    // "3NAV / 19BUS" da Pitagora con gli orari di tutte e due).
     const signature = itinerary.legs
       .filter(isTransit)
-      .map((leg) => legLine(leg) + "@" + transitousStopId(leg.from.stopId))
-      .join(">");
+      .map((leg) => normalizeText(placeLabel(leg.from, "")) + ">" + normalizeText(placeLabel(leg.to, "")))
+      .join("|");
     if (!groups.has(signature)) groups.set(signature, []);
     groups.get(signature).push(itinerary);
   });
@@ -2647,7 +2811,7 @@ function departureLine(group) {
   const times = group.all
     .map((it) => it.legs.find(isTransit))
     .filter(Boolean)
-    .slice(0, 3)
+    .slice(0, 4)
     .map((leg) => ({ leg, minutes: Math.round((new Date(leg.startTime) - now) / 60000) }));
   // "Parte tra 2 min, 11 min" entro l'ora, "alle 08:32, 08:41" piu' avanti (o un altro giorno).
   const strong = (item, text) => '<strong class="' + (item.leg.realTime ? "is-live" : "") + '">' + text + "</strong>";
@@ -2660,6 +2824,41 @@ function departureLine(group) {
   return '<p class="trip-depart">Parte ' + parts.join(", poi ") + " da " + escapeHtml(placeLabel(first.from, "fermata")) + "</p>";
 }
 
+// Per ogni tratta coi mezzi, le linee che la fanno nel gruppo: "3NAV / 19BUS".
+function groupLines(group) {
+  const sets = [];
+  group.all.forEach((itinerary) => {
+    itinerary.legs.filter(isTransit).forEach((leg, k) => {
+      sets[k] = sets[k] || [];
+      if (!sets[k].some((item) => item.line === legLine(leg))) sets[k].push({ line: legLine(leg), leg });
+    });
+  });
+  return sets;
+}
+
+function groupLegsHtml(group) {
+  const sets = groupLines(group);
+  const parts = [];
+  let k = 0;
+  group.best.legs.forEach((leg) => {
+    if (isTransit(leg)) {
+      const set = sets[k++] || [{ line: legLine(leg), leg }];
+      parts.push('<span class="leg-chip ' + legTone(leg) + '">' + ICON[legKind(leg)] + escapeHtml(set.map((item) => item.line).join(" / ")) + "</span>");
+    } else if (leg.mode === "WALK" && leg.duration >= 60) parts.push('<span class="leg-walk" title="A piedi">' + ICON.walk + "</span>");
+  });
+  return '<div class="legs">' + parts.join(ICON.sep) + "</div>";
+}
+
+// "tra 1 min, 15, 25" entro l'ora, poi l'orario: come nell'elenco delle partenze.
+function timesText(legs) {
+  const now = Date.now();
+  return legs.map((leg, i) => {
+    const minutes = Math.round((Date.parse(leg.startTime) - now) / 60000);
+    const text = minutes <= 0 ? "adesso" : minutes < 60 ? minutes + (i === 0 ? " min" : "") : clockOf(leg.startTime);
+    return '<strong class="' + (leg.realTime ? "is-live" : "") + '">' + text + "</strong>";
+  }).join(", ");
+}
+
 function tripCard(group, index) {
   const it = group.best;
   const minutes = Math.round(it.duration / 60);
@@ -2669,7 +2868,7 @@ function tripCard(group, index) {
     '<button type="button" class="trip-card" data-group="' + index + '">' +
     '<span class="trip-time"><span class="trip-duration">' + (minutes < 60 ? minutes + " <small>min</small>" : Math.floor(minutes / 60) + '<span class="unit">h</span>' + (minutes % 60 ? " " + (minutes % 60) + " <small>min</small>" : "")) + "</span>" +
     '<span class="trip-clock">' + clockOf(it.startTime) + "<strong>" + clockOf(it.endTime) + "</strong></span></span>" +
-    '<span class="trip-body">' + legsHtml(it) + departureLine(group) + '<p class="trip-extra">' + extra + "</p></span>" +
+    '<span class="trip-body">' + groupLegsHtml(group) + departureLine(group) + '<p class="trip-extra">' + extra + "</p></span>" +
     "</button>"
   );
 }
@@ -2778,11 +2977,35 @@ function stepHtml({ cls, tone, place, placeStop, note, time, live, extra }) {
   );
 }
 
+function lineChoices(itinerary, k) {
+  const group = (nav.groups || []).find((item) => item.all.includes(itinerary));
+  if (!group) return [];
+  const byLine = new Map();
+  group.all.forEach((other) => {
+    const leg = other.legs.filter(isTransit)[k];
+    if (!leg || Date.parse(leg.startTime) < Date.now() - 60000) return;
+    const key = legLine(leg) + "|" + (leg.headsign || "");
+    if (!byLine.has(key)) byLine.set(key, []);
+    byLine.get(key).push(leg);
+  });
+  return Array.from(byLine.values())
+    .map((list) => list.sort((a, b) => Date.parse(a.startTime) - Date.parse(b.startTime)).slice(0, 3))
+    .sort((a, b) => Date.parse(a[0].startTime) - Date.parse(b[0].startTime));
+}
+
+function choicesHtml(choices) {
+  if (choices.length < 2 && !(choices[0] && choices[0].length > 1)) return "";
+  return '<ul class="step-choices">' + choices.map((list) =>
+    "<li>" + legChip(list[0]) + '<span class="choice-head">' + escapeHtml(prettyName(list[0].headsign || "")) + "</span>" +
+    '<span class="choice-times">' + timesText(list) + "</span></li>").join("") + "</ul>";
+}
+
 function renderSteps(itinerary) {
   const fromName = pointText(nav.from) || "Partenza";
   const toName = pointText(nav.to) || "Arrivo";
   const steps = [];
   const legs = itinerary.legs;
+  let transitIndex = 0;
 
   legs.forEach((leg, index) => {
     const isFirst = index === 0;
@@ -2805,7 +3028,8 @@ function renderSteps(itinerary) {
         note: null,
         time: clockOf(leg.startTime),
         live: leg.realTime,
-        extra: '<div class="step-line">' + legChip(leg) + "<span>verso " + escapeHtml(prettyName(leg.headsign || "")) + "</span></div>" + list,
+        extra: '<div class="step-line">' + legChip(leg) + "<span>verso " + escapeHtml(prettyName(leg.headsign || "")) + "</span></div>" +
+          choicesHtml(lineChoices(itinerary, transitIndex++)) + list,
       }));
     } else {
       const minutes = Math.max(1, Math.round((leg.duration || 0) / 60));
@@ -2863,7 +3087,7 @@ function showItinerary(itinerary) {
   $("#route-summary").innerHTML =
     '<div class="route-total"><strong>' + durationLabel(minutes) + "</strong><span>" + clockOf(itinerary.startTime) + " – " + clockOf(itinerary.endTime) +
     '</span><button type="button" id="route-start" class="start-button">' + ICON_PLAY + "Avvia</button></div>" +
-    (itinerary.legs.some(isTransit) ? legsHtml(itinerary) : "");
+    (itinerary.legs.some(isTransit) ? groupLegsHtml((nav.groups || []).find((group) => group.all.includes(itinerary)) || { best: itinerary, all: [itinerary] }) : "");
   renderSteps(itinerary);
   $("#route-sheet").hidden = false;
   $("#view-map").classList.add("has-route");
@@ -3133,8 +3357,11 @@ function buildLiveSteps(itinerary, destName) {
     const toName = placeLabel(leg.to, "la fermata");
     const headsign = prettyName(leg.headsign || "");
     const before = steps.length ? steps[steps.length - 1].end : start;
+    const k = legs.slice(0, index).filter(isTransit).length;
+    const others = lineChoices(itinerary, k).filter((list) => legLine(list[0]) !== legLine(leg));
     steps.push({
       kind: "wait",
+      others: others.map((list) => ({ line: lineArticle(list[0]), start: Date.parse(list[0].startTime) })),
       icon: ICON[legKind(leg)],
       tone: legColor(leg),
       chip: legChip(leg),
@@ -3212,7 +3439,8 @@ function remainingStops(step, now) {
 function liveDetail(step, now) {
   if (step.kind === "wait") {
     return step.chip + " <span>A " + escapeHtml(step.fromName) + (step.headsign ? " · direzione " + escapeHtml(step.headsign) : "") +
-      " · parte alle " + clockOf(step.end) + "</span>";
+      " · parte alle " + clockOf(step.end) +
+      (step.others && step.others.length ? " · oppure " + escapeHtml(step.others.map((o) => o.line + " alle " + clockOf(o.start)).join(", ")) : "") + "</span>";
   }
   if (step.kind === "ride") {
     const left = remainingStops(step, now);

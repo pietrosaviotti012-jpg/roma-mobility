@@ -1581,3 +1581,12 @@ main {
 .view-map.live-list-open #btn-gps { display: none; }
 /* Durante la navigazione i messaggi stanno sopra la barra dell'arrivo. */
 body.live-on .toast { bottom: calc(var(--tabs-h) + var(--safe-bottom) + var(--live-bar, 72px) + 16px); }
+
+/* ---------- Linee alternative alla stessa fermata ---------- */
+.step-choices { list-style: none; margin: 8px 0 2px; padding: 0; }
+.step-choices li { display: flex; align-items: center; gap: 8px; min-height: 34px; font-size: 14px; }
+.step-choices li + li { border-top: 1px solid var(--line); }
+.choice-head { flex: 1 1 auto; min-width: 0; overflow: hidden; color: var(--ink-soft); white-space: nowrap; text-overflow: ellipsis; }
+.choice-times { flex: 0 0 auto; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.choice-times strong { color: var(--ink); }
+.choice-times strong.is-live { color: var(--live); }

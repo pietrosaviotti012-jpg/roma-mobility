@@ -12,6 +12,8 @@ sw.js                    copia locale del sito e aggiornamenti automatici
 manifest.webmanifest     nome e icone quando lo aggiungi alla schermata Home
 data/stops.txt           8.389 fermate ATAC (bus, tram, banchine metro)
 data/cotral_stops.txt    12.717 fermate COTRAL
+data/civici/             516.331 numeri civici di Roma (ANNCSU): vie.json + 32 file caricati solo quando servono
+strumenti/               lo script che rigenera data/civici dai dati ANNCSU
 icons/                   ricavate dal logo: icona app, logo chiaro e logo scuro
 netlify.toml             pubblicazione e regola /api/*
 netlify/functions/       la funzione che parla con Transitland tenendo la chiave sul server
@@ -58,6 +60,23 @@ leggono "1 h 12 min".
 L'app riordina i risultati: via giusta, civico uguale o vicino (segnato *Civico piu' vicino al ...*),
 distanza da te; i civici "km" solo se li scrivi tu. Se OpenStreetMap non conosce il civico, porta sulla
 via giusta (*Civico N non trovato: ti porto sulla via*) invece che su un'altra via.
+
+**Numeri civici ufficiali.** OpenStreetMap (e quindi Transitous e Nominatim) conosce solo una parte dei
+civici di Roma: "via anapo 51" o "via nemorense 51" non c'erano. L'app usa l'archivio nazionale
+**ANNCSU** (Agenzia delle Entrate e Istat, licenza CC BY 4.0), con le coordinate di ogni civico:
+`data/civici/vie.json` ha le 15.130 vie (nome, file, punto centrale) e i 32 file `civici-NN.json` i
+516.331 civici, scritti come differenze in centomillesimi di grado. Scrivendo un indirizzo l'app scarica
+l'elenco delle vie (circa 200 KB compressi) e poi solo il file della via giusta (circa 70 KB); il service
+worker li tiene in copia. Se il civico non esiste mostra il piu' vicino sulla stessa via. Per aggiornarli:
+`strumenti/civici-anncsu.mjs` legge le celle H3 di Roma dal mirror dei rilasci ANNCSU
+(pub-1e760dc850cb4a5aa5f8afb77713f8cd.r2.dev, progetto anncsu-open) con la libreria hyparquet.
+
+**Ricerca generica.** "sushi", "farmacia", "ospedale": i luoghi di Transitous con la distanza da te e
+l'icona del tipo di posto, i piu' vicini prima.
+
+**Tragitti uniti.** I percorsi che salgono e scendono alle stesse fermate sono una scheda sola anche con
+linee diverse ("H / 170", "MB / MB1"), con fino a quattro partenze; nel dettaglio, alla fermata, ogni
+linea con la sua direzione e i suoi orari (come Moovit); nella navigazione "oppure ... alle ...".
 
 **Piu' percorsi.** Di serie Transitous guarda solo 15 minuti di partenze (`searchWindow=900`) e 15
 minuti a piedi all'inizio e alla fine: l'app chiede un'ora di partenze e fino a 30 minuti a piedi
@@ -123,7 +142,7 @@ ogni volta che riapri l'app e ogni mezz'ora mentre e' aperta.
 Ogni volta che pubblichi:
 
 1. in `app.js` cambia `APP_VERSION` e scrivi la novita' in `APP_NEWS`;
-2. in `sw.js` alza `CACHE_VERSION` (ora e' `v25`).
+2. in `sw.js` alza `CACHE_VERSION` (ora e' `v26`).
 
 **Unica eccezione:** il colore della barra dell'orologio iOS lo legge solo quando aggiungi il sito
 alla schermata Home. Con questa versione la barra e' cambiata, quindi l'icona va tolta e rimessa
