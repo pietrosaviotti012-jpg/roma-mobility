@@ -1,0 +1,268 @@
+# Roma Mobility - versione web
+
+Sito statico: una pagina sola, mappa Leaflet con le tessere OpenStreetMap, le fermate dentro
+due file GTFS `.txt` e gli orari chiesti a Transitland con lo `stop_id` della fermata.
+Nessuna app da installare, nessun abbonamento Apple, niente Expo.
+
+```
+index.html               struttura della pagina
+styles.css               aspetto, temi chiaro e scuro, margini per notch e barra di sistema
+app.js                   tutta la logica (lettura file, mappa, ricerca, orari, fermate successive)
+sw.js                    copia locale del sito e aggiornamenti automatici
+manifest.webmanifest     nome e icone quando lo aggiungi alla schermata Home
+data/stops.txt           8.389 fermate ATAC (bus, tram, banchine metro)
+data/cotral_stops.txt    12.717 fermate COTRAL
+data/stazioni.json       268 stazioni: 234 Trenitalia del Lazio (Transitous) + 34 Roma-Lido e Roma-Viterbo (COTRAL)
+data/cotral_routes.json  route_id COTRAL -> sigla della linea, per i mezzi sulla mappa
+data/civici/             516.331 numeri civici di Roma (ANNCSU): vie.json + 32 file caricati solo quando servono
+strumenti/               lo script che rigenera data/civici dai dati ANNCSU
+icons/                   ricavate dal logo: icona app, logo chiaro e logo scuro
+netlify.toml             pubblicazione e regola /api/*
+netlify/functions/       la funzione che parla con Transitland tenendo la chiave sul server
+```
+
+## Com'e' fatta
+
+Tre sezioni in basso: **Mappa**, **Fermate**, **Impostazioni**.
+
+- **Mappa**: le fermate compaiono avvicinandosi; il tasto tondo centra sulla tua posizione.
+- **Fermate**: cerca fermate (filtri metro, bus e tram, COTRAL, preferite) e anche vie e piazze,
+  chieste a Nominatim di OpenStreetMap e limitate al Lazio.
+- **Impostazioni**: tema, quanto guardare avanti, ogni quanto aggiornare.
+
+Toccando una fermata si apre la sua scheda con le partenze. **Toccando una corsa** si vedono le
+fermate successive, quanto ci mette il mezzo ad arrivare a ognuna partendo da li' e l'orario di
+arrivo. I dati arrivano da Transitland (`/routes/{linea}/trips/{corsa}`); se la corsa e' in tempo
+reale, gli orari tengono conto del suo anticipo o ritardo. Toccando una di quelle fermate se ne
+aprono le partenze.
+
+## Come arrivare (navigazione)
+
+Sulla mappa c'e' la barra **Dove vuoi andare?**. Il flusso ricalca Moovit:
+
+1. **ricerca** del luogo (vie, piazze, locali, fermate): bastano poche lettere ("colos", "piazza bolo").
+   Mentre scrivi compaiono subito i suggerimenti che l'app conosce gia' (mete frequenti, preferiti,
+   recenti, fermate), poi i luoghi trovati da Transitous; i doppioni vicini meno di 400 m spariscono;
+2. **Pianifica un viaggio**: partenza (di solito *Posizione attuale*) e arrivo, tasto per scambiarli,
+   *Partendo ora / Parti alle / Arriva entro* con il **giorno** (oggi, domani, fino a due settimane),
+   ordine per *piu' veloci*, *meno a piedi*,
+   *meno cambi*; le corse uguali dalla stessa fermata stanno in una scheda sola con piu' orari;
+3. alternative **a piedi e in bici**;
+4. il percorso scelto si disegna **sulla mappa** con i colori delle linee e un foglio con le tappe
+   (fermate intermedie apribili, fermate che portano alla loro scheda con le partenze).
+
+**Preferiti** (salvati solo nel telefono): *Casa* e *Lavoro* in cima a "Dove vuoi andare?" (matita
+per cambiarli), altri luoghi con la stella accanto ai risultati o con *+ Aggiungi*, e i **tragitti**
+salvati con la stella in alto a destra in *Pianifica un viaggio*. Dalla scheda di una fermata,
+**Ottieni indicazioni** calcola il percorso dalla tua posizione fino a li'. Le durate oltre l'ora si
+leggono "1 h 12 min".
+
+**Indirizzi con il civico.** Il geocoder di Transitous mette spesso in cima risultati sbagliati
+("via casilina 700" -> Via Casilina km 71,700 a Ferentino; "via di boccea 200" -> Via di Casal Boccone 208).
+L'app riordina i risultati: via giusta, civico uguale o vicino (segnato *Civico piu' vicino al ...*),
+distanza da te; i civici "km" solo se li scrivi tu. Se OpenStreetMap non conosce il civico, porta sulla
+via giusta (*Civico N non trovato: ti porto sulla via*) invece che su un'altra via.
+
+**Numeri civici ufficiali.** OpenStreetMap (e quindi Transitous e Nominatim) conosce solo una parte dei
+civici di Roma: "via anapo 51" o "via nemorense 51" non c'erano. L'app usa l'archivio nazionale
+**ANNCSU** (Agenzia delle Entrate e Istat, licenza CC BY 4.0), con le coordinate di ogni civico:
+`data/civici/vie.json` ha le 15.130 vie (nome, file, punto centrale) e i 32 file `civici-NN.json` i
+516.331 civici, scritti come differenze in centomillesimi di grado. Scrivendo un indirizzo l'app scarica
+l'elenco delle vie (circa 200 KB compressi) e poi solo il file della via giusta (circa 70 KB); il service
+worker li tiene in copia. Se il civico non esiste mostra il piu' vicino sulla stessa via. Per aggiornarli:
+`strumenti/civici-anncsu.mjs` legge le celle H3 di Roma dal mirror dei rilasci ANNCSU
+(pub-1e760dc850cb4a5aa5f8afb77713f8cd.r2.dev, progetto anncsu-open) con la libreria hyparquet.
+
+**Ricerca generica.** "sushi", "farmacia", "ospedale": i luoghi di Transitous con la distanza da te e
+l'icona del tipo di posto, i piu' vicini prima.
+
+**Tragitti uniti.** I percorsi che salgono e scendono alle stesse fermate sono una scheda sola anche con
+linee diverse ("H / 170", "MB / MB1"), con fino a quattro partenze; nel dettaglio, alla fermata, ogni
+linea con la sua direzione e i suoi orari (come Moovit); nella navigazione "oppure ... alle ...".
+
+**Piu' percorsi.** Di serie Transitous guarda solo 15 minuti di partenze (`searchWindow=900`) e 15
+minuti a piedi all'inizio e alla fine: l'app chiede un'ora di partenze e fino a 30 minuti a piedi
+(da 8 a 15-28 percorsi per le stesse mete). Se la prima pagina e' vuota prova da sola la successiva.
+
+## Treni
+
+- **Stazioni Trenitalia** (`data/stazioni.json`, tipo `fs`/`fs+`): partenze da Transitous
+  `/api/v5/stoptimes?stopId=it-trenitalia_08409:station` con binario (`place.track`), tempo reale e
+  soppressioni; toccando un treno le fermate arrivano da `/api/v5/trip?tripId=...`. I dati Trenitalia
+  chiamano i regionali solo "REG": la linea **FL1...FL8** si ricava dai capolinea (`FL_TERMINI`),
+  "Leonardo" e' l'RV Termini-Fiumicino.
+- **Roma-Lido (Metromare) e Roma-Viterbo**: le gestisce COTRAL dal 2022, feed Transitland a parte
+  `f-cotral~lazio~ferro` (stazioni `RL_*` e `RN_*`, linee ROMALIDO, RVURB, RVEXT). Le corse non hanno la
+  destinazione scritta: l'app legge l'ultima fermata di una corsa per direzione. Niente tempo reale, e
+  **Transitous non le conosce** (nei percorsi non compaiono): andrebbe segnalato a Transitous il feed
+  `http://travel.mob.cotralspa.it:7777/GTFS/GTFS_FERRO.zip`.
+- Le stazioni sono sulla mappa (pallino magenta) e nel filtro **Treni** di Fermate.
+- Lista delle stazioni rigenerabile: Transitous `/api/v1/map/stops?min=..&max=..` a riquadri sul Lazio,
+  tenendo gli `it-trenitalia_*` con modi ferroviari, piu' `/stops?feed_onestop_id=f-cotral~lazio~ferro`.
+
+## COTRAL in movimento
+
+Sulla mappa, da zoom 11, i COTRAL con la sigla della linea e una freccia nella direzione di marcia:
+BusOne `cotral/gtfs-rt/vehicle-positions.json` (circa 11 KB compressi) ogni 20 secondi, solo con la
+mappa davanti e l'app aperta. Toccando un mezzo: linea, prossima fermata, quanto e' vecchia la posizione.
+
+## Mezzi in tempo reale (schermata a parte)
+
+Il tasto con il bus sopra quello della posizione apre una schermata sulla mappa con i soli mezzi in
+movimento e i filtri Tutti / Bus / Tram / Metro / Treni / COTRAL.
+
+- **ATAC e treni**: Transitous `/api/v1/map/trips` restituisce i tratti fra due fermate percorsi nei
+  prossimi minuti, con gli orari gia' corretti dal tempo reale; l'app muove ogni mezzo lungo il tracciato
+  secondo per secondo. E' una **stima** (orario + ritardo), non il GPS. Etichetta piena = corsa con tempo
+  reale, chiara e tratteggiata = solo orario.
+- **COTRAL**: GPS da BusOne (lo stesso livello della mappa normale).
+- Peso: la risposta comprende i tracciati interi dei pullman a lunga percorrenza (FlixBus e simili, che non
+  si possono escludere): con precisione 4 (circa 11 m) e cinque minuti alla volta sono circa 160 KB
+  compressi ogni 3 minuti, solo da zoom 14 e solo con la schermata aperta.
+- **Perche' non solo BusOne**: BusOne non ha ATAC (nel Lazio solo COTRAL e treni). Il GPS vero ATAC esiste
+  (Roma Mobilita', `rome_rtgtfs_vehicle_positions_feed.pb`, aggiornato ogni pochi secondi) ma non permette
+  la lettura dal browser (niente CORS): servirebbe un piccolo server (funzione Netlify con pubblicazione da
+  GitHub). Transitland resta la fonte delle partenze ATAC e COTRAL alle fermate.
+
+## Orario scelto
+
+"Parti" e "Arriva entro" mostrano le soluzioni che partono (o arrivano) fra 10 minuti prima e 10 minuti
+dopo l'orario scelto: `time` spostato di 10 minuti e `searchWindow=1200`, poi un filtro sulla prima
+pagina. "Partenze piu' tardi" / "Partenze prima" vanno oltre.
+
+## Navigazione attiva (Avvia)
+
+Nel riepilogo di un percorso c'e' **Avvia**: in alto un riquadro con cosa fare adesso (cammina fino a,
+aspetta il bus, scendi a... con i minuti, i metri o le fermate che mancano), frecce per scorrere i
+passi, sotto l'orario di arrivo, **Tappe** e **Termina**. Il passo va avanti da solo con la posizione
+(arrivato al punto, allontanato dalla fermata dopo la partenza) o, senza posizione, con l'orario.
+Lo schermo resta acceso (Wake Lock). Se iOS chiude l'app, riaprendola il viaggio riprende.
+
+**Avvisi a schermo spento.** Su iPhone una pagina web a schermo spento e' congelata e non puo'
+mandare notifiche da sola; le notifiche web vere richiederebbero un server (su Netlify costerebbe
+crediti ogni minuto e un deploy da GitHub). Per questo gli avvisi passano da **ntfy.sh**, gratuito e
+senza account: all'avvio l'app programma sul canale personale (nome casuale, in Impostazioni) gli
+avvisi con l'ora giusta (`delay`), e l'app **ntfy** li mostra: mezzo in arrivo tra 3 minuti,
+"scendi alla prossima" quando il mezzo lascia la penultima fermata, "scendi ora" con il passo dopo.
+**Termina** li cancella (`DELETE /canale/id`). Chi conosce il nome del canale puo' leggerli.
+
+I percorsi li calcola **Transitous** (`api.transitous.org`), servizio pubblico e gratuito basato su
+MOTIS, direttamente dal telefono: nessun server nostro. Copre ATAC (bus, tram, metro, con tempo
+reale), i treni regionali Trenitalia e, da ottobre 2026, anche i **COTRAL** (Transitous ora prende il
+loro feed da BusOne). Le fermate di Transitous hanno lo stop_id dei nostri file
+(`it-Lazio-Rome_71262` -> 71262, e per i COTRAL `f3583`).
+
+**Orario scelto.** Con "Parti alle" o "Arriva entro" si chiede mezz'ora di soluzioni (con "Partendo ora"
+un'ora): con un'ora intera "Arriva entro le 8:30" proponeva per primi arrivi alle 7:30. Con "Arriva
+entro" in testa va chi arriva piu' vicino all'orario scelto (cioe' parte piu' tardi), la corsa
+mostrata di ogni gruppo e' la piu' tarda e il tasto in fondo chiede le "Partenze prima"
+(`previousPageCursor`).
+
+Alcune corse arrivano con un tempo reale incoerente (tutte le fermate allo stesso minuto): i percorsi
+che le usano vengono scartati, perche' promettono coincidenze impossibili.
+
+Condizioni d'uso di Transitous: progetto **non commerciale**, poche richieste, link visibile alle
+fonti (c'e' nelle impostazioni e sotto i percorsi). Chiedono anche che il progetto sia **open source**
+e che sul sito ci sia un **contatto**: se pubblichi il codice su GitHub e aggiungi un recapito nei
+crediti, sei a posto.
+
+## Pubblicare su Netlify
+
+1. Su app.netlify.com: **Add new site > Deploy manually** e trascina dentro questa cartella.
+   (Oppure metti la cartella su GitHub e collega il repository: `publish` e `functions` sono
+   gia' scritti in `netlify.toml`.)
+2. A sito creato vai in **Site configuration > Environment variables** e aggiungi:
+
+   | Nome | Valore |
+   |---|---|
+   | `TRANSITLAND_API_KEY` | la tua chiave Transitland |
+
+3. Fai un nuovo deploy (**Deploys > Trigger deploy**) perche' la variabile venga letta.
+
+La funzione risponde solo a due domande (partenze da una fermata, fermate di una corsa) e aggiunge
+la chiave lato server: **la chiave non compare mai nella pagina**. Senza la variabile il sito
+funziona lo stesso ma usa la chiave di riserva scritta in `app.js`, che chiunque puo' leggere.
+
+## Aggiornare l'app sui telefoni
+
+Non serve togliere e rimettere l'icona: il service worker controlla se c'e' una versione nuova
+ogni volta che riapri l'app e ogni mezz'ora mentre e' aperta.
+
+- se l'app e' aperta quando arriva l'aggiornamento compare **"C'e' una versione nuova"** con il
+  tasto **Aggiorna**;
+- alla prima apertura dopo l'aggiornamento compare **"Roma Mobility e' stata aggiornata"** con una
+  riga su cosa e' cambiato.
+
+Ogni volta che pubblichi:
+
+1. in `app.js` cambia `APP_VERSION` e scrivi la novita' in `APP_NEWS`;
+2. in `sw.js` alza `CACHE_VERSION` (ora e' `v29`).
+
+**Unica eccezione:** il colore della barra dell'orologio iOS lo legge solo quando aggiungi il sito
+alla schermata Home. Con questa versione la barra e' cambiata, quindi l'icona va tolta e rimessa
+**una volta**. Dagli aggiornamenti successivi non serve piu'.
+
+## La barra dell'orologio
+
+La barra resta quella di iOS (`default`): niente sfocatura sopra la pagina e niente testo coperto.
+
+**Da iOS 26 Safari non legge piu' `theme-color`**: colora la striscia con lo sfondo del `body`,
+a meno che in cima ci sia un elemento `position: fixed` largo quanto lo schermo (e alto almeno
+6 px), nel qual caso usa quello e lo ricalcola solo quando quell'elemento cambia. Per questo:
+
+- la pagina e' una colonna flex (schermate + schede) senza elementi fissi in cima;
+- il `body` ha il colore della striscia (`--bar`: bianco / `#101c33`) e le schermate il loro sfondo;
+- al cambio di aspetto lo script riscrive `document.body.style.backgroundColor`, che iOS ridipinge subito.
+
+`theme-color` resta per iOS fino al 18 e per Android. Non aggiungere elementi `fixed` a tutta
+larghezza che tocchino il bordo alto, o la striscia smette di seguire il tema.
+
+## La fascia sotto l'orologio
+
+Su iOS 26 la pagina passa sotto l'orologio e iOS sfoca tutto cio' che ci finisce sotto: e' un effetto
+del sistema e non si puo' spegnere. Per questo l'app comincia **sotto** una fascia di colore pieno
+(`--top-band` in styles.css, alta quanto la zona dell'orologio): iOS sfoca un colore uniforme e la
+sfocatura non si vede. Non mettere niente in quella fascia; i pannelli a tutto schermo partono da
+`--top-overlay`.
+
+## La posizione
+
+Dopo il primo si' l'app se lo ricorda: alle aperture successive cerca la posizione da sola e,
+nell'attesa, riparte dall'ultimo punto in cui eri. Se non l'hai ancora condivisa, la richiesta arriva all'apertura.
+
+Se l'iPhone rifa' la domanda a ogni apertura, la fa iOS e non l'app. Per non vederla piu':
+**Impostazioni > App > Safari > Posizione > Consenti**.
+
+## Cose da sapere
+
+- Gli orari ATAC arrivano dal GTFS di Roma Mobilita' via Transitland: in **blu** quando il mezzo
+  trasmette la sua posizione, in grigio quando e' l'orario programmato.
+- **COTRAL**: fino a settembre 2026 il calendario su Transitland era fermo all'agosto 2025 (certificato
+  del server COTRAL sbagliato). Da ottobre 2026 Transitland scarica di nuovo gli orari aggiornati
+  (`travel.mob.cotralspa.it:7777`), quindi le partenze COTRAL si chiedono come quelle ATAC, su almeno
+  due ore. Il **tempo reale** COTRAL, che l'azienda non pubblica, arriva da
+  [BusOne](https://proxy.busone.app/cotral/readme) (`/cotral/gtfs-rt/trip-updates.json`, circa 160 KB
+  compresso): stessi trip_id di Transitland, scaricato solo con una fermata COTRAL aperta e al massimo
+  ogni 30 secondi. Condizioni di BusOne: gratis per uso personale e non commerciale, attribuzione
+  "BusOne (https://busone.app) e fonte originale", e le richieste devono presentarsi con gli header
+  `X-BusOne-Client` e `X-BusOne-Use: personal` (l'app li manda). BusOne ha anche le posizioni dei
+  mezzi (`vehicle-positions.json`) e il GTFS statico: non usati per ora.
+- Le fermate **preferite** sono gialle sulla mappa e negli elenchi, e restano visibili anche con la
+  mappa lontana.
+- Le tessere della mappa arrivano dai server di OpenStreetMap: per un sito personale va bene. Il
+  tema scuro non usa tessere diverse, le rende scure con un filtro.
+
+## Provarlo in locale
+
+```
+python -m http.server 5191 --directory .
+```
+
+Poi apri http://localhost:5191. In locale la funzione Netlify non c'e': il sito se ne accorge da
+solo (riceve un 404) e passa alla chiamata diretta a Transitland.
+
+## Codice aperto
+
+Il codice e' pubblicato su https://github.com/pietrosaviotti012-jpg/roma-mobility con licenza MIT
+(file LICENSE): e' una delle condizioni di Transitous. A ogni pubblicazione su Netlify vanno caricati
+gli stessi file anche li'.
