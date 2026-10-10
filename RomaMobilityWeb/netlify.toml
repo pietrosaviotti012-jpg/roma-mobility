@@ -1,0 +1,20 @@
+[build]
+  publish = "."
+  functions = "netlify/functions"
+
+# Il sito chiama /api/departures: qui viene girato alla funzione che tiene la chiave sul server.
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+
+# I file delle fermate cambiano raramente e pesano: conviene tenerli in cache a lungo.
+[[headers]]
+  for = "/data/*"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"
+
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
