@@ -1679,3 +1679,33 @@ body.live-on .toast { bottom: calc(var(--tabs-h) + var(--safe-bottom) + var(--li
 .fleet-arrow.tone-mb::before { border-bottom-color: var(--mb); }
 .fleet-arrow.tone-mc::before { border-bottom-color: var(--mc); }
 .fleet-arrow.tone-rail::before { border-bottom-color: #b4235a; }
+
+/* ---------- Prima / Dopo nel percorso ---------- */
+.route-shift {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+}
+.route-shift-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--live);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.route-shift-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.route-shift-btn:disabled { opacity: 0.6; }
+.route-shift-time { font-family: var(--condensed); font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }

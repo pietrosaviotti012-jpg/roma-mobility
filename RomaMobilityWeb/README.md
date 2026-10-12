@@ -196,7 +196,7 @@ ogni volta che riapri l'app e ogni mezz'ora mentre e' aperta.
 Ogni volta che pubblichi:
 
 1. in `app.js` cambia `APP_VERSION` e scrivi la novita' in `APP_NEWS`;
-2. in `sw.js` alza `CACHE_VERSION` (ora e' `v29`).
+2. in `sw.js` alza `CACHE_VERSION` (ora e' `v30`).
 
 **Unica eccezione:** il colore della barra dell'orologio iOS lo legge solo quando aggiungi il sito
 alla schermata Home. Con questa versione la barra e' cambiata, quindi l'icona va tolta e rimessa

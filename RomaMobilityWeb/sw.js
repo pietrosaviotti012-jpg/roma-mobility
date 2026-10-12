@@ -8,7 +8,7 @@
  * Gli orari (/api/) e le tessere della mappa non vengono mai salvati: devono essere freschi.
  */
 
-const CACHE_VERSION = "roma-mobility-v29";
+const CACHE_VERSION = "roma-mobility-v30";
 const SHELL = [
   "./",
   "index.html",

@@ -42,8 +42,8 @@ const STORAGE = {
 };
 
 // Cambia a ogni pubblicazione: chi apre l'app dopo un aggiornamento vede cosa c'e' di nuovo.
-const APP_VERSION = "2026.10.10-3";
-const APP_NEWS = "Nuovo tasto sulla mappa: i mezzi in tempo reale. Bus, tram, metro e treni che si muovono sulla mappa, e i COTRAL dal GPS.";
+const APP_VERSION = "2026.10.12-1";
+const APP_NEWS = "Nel percorso scelto ci sono «Prima» e «Dopo»: scorri la stessa corsa più presto o più tardi, con gli orari dei mezzi.";
 
 /* ------------------------------------------------------------------ *
  * Utilita'
@@ -3179,15 +3179,18 @@ function walkingSeconds(itinerary) {
 }
 
 // Stesse linee dalla stessa fermata = stessa scheda, con piu' orari di partenza (come fa Moovit).
+// Stesse fermate di salita e discesa = stesso tragitto, anche con linee diverse (come Moovit:
+// "3NAV / 19BUS" da Pitagora con gli orari di tutte e due). Senza mezzi: a piedi o in bici.
+function tripSignature(itinerary) {
+  const transit = itinerary.legs.filter(isTransit);
+  if (!transit.length) return "diretto:" + itinerary.legs.map((leg) => leg.mode).join(",");
+  return transit.map((leg) => normalizeText(placeLabel(leg.from, "")) + ">" + normalizeText(placeLabel(leg.to, ""))).join("|");
+}
+
 function groupItineraries(list) {
   const groups = new Map();
   list.forEach((itinerary) => {
-    // Stesse fermate di salita e discesa = stesso tragitto, anche con linee diverse (come Moovit:
-    // "3NAV / 19BUS" da Pitagora con gli orari di tutte e due).
-    const signature = itinerary.legs
-      .filter(isTransit)
-      .map((leg) => normalizeText(placeLabel(leg.from, "")) + ">" + normalizeText(placeLabel(leg.to, "")))
-      .join("|");
+    const signature = tripSignature(itinerary);
     if (!groups.has(signature)) groups.set(signature, []);
     groups.get(signature).push(itinerary);
   });
@@ -3500,6 +3503,11 @@ function showItinerary(itinerary) {
   $("#route-summary").innerHTML =
     '<div class="route-total"><strong>' + durationLabel(minutes) + "</strong><span>" + clockOf(itinerary.startTime) + " – " + clockOf(itinerary.endTime) +
     '</span><button type="button" id="route-start" class="start-button">' + ICON_PLAY + "Avvia</button></div>" +
+    // Come Moovit: la stessa corsa prima o dopo, con i suoi orari.
+    '<div class="route-shift">' +
+    '<button type="button" class="route-shift-btn" data-shift="-1" aria-label="Corsa precedente">' + ICON_PREV + "Prima</button>" +
+    '<span class="route-shift-time">' + clockOf(itinerary.startTime) + " – " + clockOf(itinerary.endTime) + "</span>" +
+    '<button type="button" class="route-shift-btn" data-shift="1" aria-label="Corsa successiva">Dopo' + ICON_NEXT + "</button></div>" +
     (itinerary.legs.some(isTransit) ? groupLegsHtml((nav.groups || []).find((group) => group.all.includes(itinerary)) || { best: itinerary, all: [itinerary] }) : "");
   renderSteps(itinerary);
   $("#route-sheet").hidden = false;
@@ -4220,6 +4228,11 @@ function wireLive() {
 
   // "Avvia" sta nel riepilogo del percorso, che si ridisegna a ogni percorso aperto.
   $("#route-summary").addEventListener("click", (event) => {
+    const shift = event.target.closest("[data-shift]");
+    if (shift && nav.shown) {
+      shiftItinerary(Number(shift.dataset.shift), shift);
+      return;
+    }
     if (event.target.closest("#route-start") && nav.shown) startLive(nav.shown, null);
   });
   $("#live-prev").innerHTML = ICON_PREV;
@@ -4535,6 +4548,72 @@ function wireFleet() {
     window.clearTimeout(fleet.moveTimer);
     fleet.moveTimer = window.setTimeout(() => fetchFleet(false), 500);
   });
+}
+
+/* ---------------- Prima / Dopo: la stessa corsa piu' presto o piu' tardi ---------------- */
+
+// Prima si cerca fra le corse gia' trovate con le stesse fermate; se finiscono, si chiede a Transitous
+// un'altra ora di soluzioni dopo (o prima) di quella mostrata e si tiene la piu' vicina con lo stesso tragitto.
+async function shiftItinerary(direction, button) {
+  const current = nav.shown;
+  const signature = tripSignature(current);
+  const start = Date.parse(current.startTime);
+  const pick = (list) => {
+    const same = list.filter((it) => tripSignature(it) === signature && !it.legs.some(implausibleLeg));
+    const candidates = same.filter((it) => (direction > 0 ? Date.parse(it.startTime) > start + 30000 : Date.parse(it.startTime) < start - 30000));
+    candidates.sort((a, b) => direction * (Date.parse(a.startTime) - Date.parse(b.startTime)));
+    return candidates[0] || null;
+  };
+
+  let next = pick(nav.itineraries.concat(nav.direct || []));
+  if (!next) {
+    const label = button.innerHTML;
+    button.disabled = true;
+    button.textContent = "Cerco…";
+    try {
+      const [from, to] = await Promise.all([resolvePoint(nav.from), resolvePoint(nav.to)]);
+      const params = new URLSearchParams({
+        fromPlace: from.lat.toFixed(6) + "," + from.lon.toFixed(6),
+        toPlace: to.lat.toFixed(6) + "," + to.lon.toFixed(6),
+        numItineraries: "8",
+        directModes: "WALK,BIKE",
+        maxDirectTime: "5400",
+        searchWindow: "3600",
+        maxPreTransitTime: "1800",
+        maxPostTransitTime: "1800",
+      });
+      if (direction > 0) params.set("time", new Date(start + 60000).toISOString());
+      else {
+        params.set("time", new Date(Date.parse(current.endTime) - 60000).toISOString());
+        params.set("arriveBy", "true");
+      }
+      const response = await fetch(TRANSITOUS + "/v5/plan?" + params.toString());
+      if (!response.ok) throw new Error("pianificatore: risposta " + response.status);
+      const payload = await response.json();
+      const found = (payload.itineraries || []).concat(payload.direct || []);
+      next = pick(found);
+      if (next && nav.shown === current) {
+        // Resta fra le soluzioni: tornando all'elenco e con altri Prima/Dopo la si ritrova.
+        if (isTransitItinerary(next)) nav.itineraries.push(next);
+        nav.groups = sortGroups(groupItineraries(nav.itineraries));
+      }
+    } catch (error) {
+      console.warn("altre corse non disponibili:", error);
+    } finally {
+      button.disabled = false;
+      button.innerHTML = label;
+    }
+  }
+  if (nav.shown !== current) return;
+  if (!next) {
+    toast(direction > 0 ? "Non trovo corse più tardi con questo tragitto." : "Non trovo corse prima con questo tragitto.");
+    return;
+  }
+  showItinerary(next);
+}
+
+function isTransitItinerary(itinerary) {
+  return itinerary.legs.some(isTransit);
 }
 
 boot();
