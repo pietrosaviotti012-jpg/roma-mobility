@@ -12,6 +12,9 @@ sw.js                    copia locale del sito e aggiornamenti automatici
 manifest.webmanifest     nome e icone quando lo aggiungi alla schermata Home
 data/stops.txt           8.389 fermate ATAC (bus, tram, banchine metro)
 data/cotral_stops.txt    12.717 fermate COTRAL
+data/fermate-roma.json   8.235 fermate ATAC e 78 stazioni metro, gia' pulite (da stops.txt con strumenti/fermate.js)
+data/fermate-cotral.json 12.717 fermate COTRAL (da cotral_stops.txt con strumenti/fermate.js)
+data/luoghi/             77.000 luoghi di Roma e dintorni da OpenStreetMap, divisi per le prime due lettere delle parole
 data/stazioni.json       268 stazioni: 234 Trenitalia del Lazio (Transitous) + 34 Roma-Lido e Roma-Viterbo (COTRAL)
 data/cotral_routes.json  route_id COTRAL -> sigla della linea, per i mezzi sulla mappa
 data/civici/             516.331 numeri civici di Roma (ANNCSU): vie.json + 32 file caricati solo quando servono
@@ -83,6 +86,36 @@ linea con la sua direzione e i suoi orari (come Moovit); nella navigazione "oppu
 **Piu' percorsi.** Di serie Transitous guarda solo 15 minuti di partenze (`searchWindow=900`) e 15
 minuti a piedi all'inizio e alla fine: l'app chiede un'ora di partenze e fino a 30 minuti a piedi
 (da 8 a 15-28 percorsi per le stesse mete). Se la prima pagina e' vuota prova da sola la successiva.
+
+## Avvio veloce
+
+La mappa compare subito: le fermate arrivano dopo, in JSON gia' pulito (prima Roma, ~140 KB compressi,
+poi COTRAL e stazioni). Prima l'app scaricava e leggeva 1,7 MB di CSV (stops.txt + cotral_stops.txt) prima di
+mostrare qualsiasi cosa. I CSV restano in data/ come sorgente: `node strumenti/fermate.js` rigenera i JSON
+(stessi id delle fermate, quindi le preferite restano).
+
+## Ricerca dei luoghi
+
+`data/luoghi/` viene da un estratto OpenStreetMap (Geofabrik, Italia centrale) letto con
+`strumenti/luoghi.py` (pyosmium): negozi, locali, scuole, ospedali, monumenti (anche quelli disegnati come
+relazioni: Pantheon, Colosseo), parchi, quartieri, paesi e le vie dei comuni intorno a Roma (quelle di Roma
+arrivano dai civici ANNCSU). Ogni luogo ha il tipo in italiano ("farmacia", "supermercato"), cosi' si cerca
+anche per tipo, e il comune ("tivoli villa d este"). Il file `luoghi-xy.json` contiene i luoghi con una
+parola che comincia per "xy": una ricerca scarica un solo file (di solito pochi KB, al massimo ~180 KB
+compressi) e poi resta in copia. A parita' di nome vincono i luoghi importanti (monumenti, stazioni, parchi).
+`notevoli.json` (7.000 monumenti, musei, stazioni, parchi) serve a dare un nome al punto tenuto premuto.
+
+Rigenerarlo: scaricare `centro-latest.osm.pbf` da download.geofabrik.de, poi
+`python -I strumenti/luoghi.py centro-latest.osm.pbf data/luoghi data/civici/vie.json` (serve `pip install osmium`).
+Su GitHub la cartella ha piu' di 100 file: dal sito si caricano al massimo 100 file per volta.
+
+## Un punto sulla mappa
+
+Tenendo premuto sulla mappa (o col tasto destro) cade una puntina e compare una scheda con l'indirizzo
+(Transitous `/api/v1/reverse-geocode` + il luogo notevole piu' vicino), "Indicazioni", "Parti da qui" e
+"Salva". La scheda non oscura la mappa e si chiude trascinandola giu' (segue il dito, al rilascio usa la
+velocita', molla senza rimbalzo). "Cerca sulla mappa" (in cima alla ricerca e in fondo ai risultati): una
+puntina fissa al centro, si sposta la mappa e si conferma il punto; vale anche per impostare Casa e Lavoro.
 
 ## Treni
 
@@ -195,8 +228,8 @@ ogni volta che riapri l'app e ogni mezz'ora mentre e' aperta.
 
 Ogni volta che pubblichi:
 
-1. in `app.js` cambia `APP_VERSION` e scrivi la novita' in `APP_NEWS`;
-2. in `sw.js` alza `CACHE_VERSION` (ora e' `v30`).
+1. in `app.js` cambia `APP_VERSION` e aggiungi in cima ad `APP_CHANGES` la voce con l'elenco delle novita' (dopo l'aggiornamento si apre una scheda con quelle non ancora viste);
+2. in `sw.js` alza `CACHE_VERSION` (ora e' `v32`).
 
 **Unica eccezione:** il colore della barra dell'orologio iOS lo legge solo quando aggiungi il sito
 alla schermata Home. Con questa versione la barra e' cambiata, quindi l'icona va tolta e rimessa

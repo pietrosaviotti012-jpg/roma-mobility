@@ -1709,3 +1709,107 @@ body.live-on .toast { bottom: calc(var(--tabs-h) + var(--safe-bottom) + var(--li
 .route-shift-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 .route-shift-btn:disabled { opacity: 0.6; }
 .route-shift-time { font-family: var(--condensed); font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* ---------- Punto sulla mappa (pressione lunga) e "Cerca sulla mappa" ---------- */
+.drop-pin { background: none; border: 0; }
+.drop-pin-body { display: block; width: 36px; height: 44px; transform-origin: 50% 100%; animation: pin-drop 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.25); }
+.drop-pin-body svg, .pick-pin svg { width: 36px; height: 36px; fill: #e0572e; stroke: #ffffff; stroke-width: 1.4; filter: drop-shadow(0 3px 4px rgb(0 0 0 / 0.3)); }
+.drop-pin-body svg circle, .pick-pin svg circle { fill: #ffffff; stroke: none; }
+@keyframes pin-drop { from { transform: translateY(-26px) scale(0.9); opacity: 0; } to { transform: none; opacity: 1; } }
+
+.point-card {
+  position: absolute;
+  left: calc(var(--safe-left) + 10px);
+  right: calc(var(--safe-right) + 10px);
+  bottom: 10px;
+  z-index: 1100;
+  padding: 6px 14px 14px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sheet);
+  touch-action: none;
+  will-change: transform;
+  animation: rise 0.28s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.point-card[hidden] { display: none; }
+.point-card .sheet-grab { margin: 2px auto 10px; }
+.point-head { display: flex; align-items: flex-start; gap: 12px; }
+.point-icon { flex: 0 0 auto; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; background: color-mix(in srgb, #e0572e 16%, transparent); color: #e0572e; }
+.point-icon svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+.point-text { flex: 1 1 auto; min-width: 0; }
+.point-text h2 { margin: 0; font-size: 18px; line-height: 1.25; letter-spacing: -0.01em; }
+.point-text h2.is-loading { color: var(--ink-soft); }
+.point-text p { margin: 3px 0 0; color: var(--ink-soft); font-size: 13.5px; }
+.point-actions { display: flex; gap: 8px; margin-top: 14px; }
+.point-btn {
+  flex: 1 1 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 46px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 14.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 100ms ease-out;
+}
+/* Risposta sul tocco, non al rilascio. */
+.point-btn:active, .start-button:active, .route-shift-btn:active { transform: scale(0.97); }
+.point-btn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.point-btn.is-primary { border-color: var(--live); background: var(--live); color: #ffffff; }
+.point-btn.is-on { color: var(--star); }
+.point-btn.is-on svg { fill: var(--star); stroke: var(--star); }
+
+.pick-bar {
+  position: absolute;
+  top: var(--top-clear);
+  left: calc(var(--safe-left) + var(--gutter));
+  right: calc(var(--safe-right) + var(--gutter));
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: var(--control);
+  padding: 0 10px 0 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+.pick-bar[hidden] { display: none; }
+.pick-bar p { margin: 0; font-weight: 600; }
+.pick-pin { display: none; position: absolute; left: 50%; top: 50%; z-index: 1050; width: 36px; height: 36px; margin: -36px 0 0 -18px; pointer-events: none; }
+.view-map.is-picking .pick-pin { display: block; }
+.view-map.is-picking #nav-open, .view-map.is-picking #map-hint, .view-map.is-picking #btn-fleet { display: none; }
+.pick-card { touch-action: auto; }
+.pick-card .primary { margin-top: 12px; }
+.nav-list-map { margin-top: 14px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .drop-pin-body, .point-card { animation: none; }
+}
+.point-btn { white-space: nowrap; font-size: 14px; }
+.point-btn.is-primary { color: var(--surface); }
+.point-btn.is-primary svg { stroke: var(--surface); }
+
+/* ---------- Novita' dopo l'aggiornamento ---------- */
+.news-sheet { z-index: 1300; }
+.news-body { height: auto; max-height: min(80%, 640px); }
+.news-head { display: flex; align-items: center; gap: 14px; }
+.news-head h2 { margin: 0; font-size: 24px; line-height: 1.1; letter-spacing: -0.02em; }
+.news-head p { margin: 4px 0 0; color: var(--ink-soft); font-size: 13.5px; }
+.news-badge { flex: 0 0 auto; display: grid; place-items: center; width: 48px; height: 48px; border-radius: 14px; background: color-mix(in srgb, var(--star) 20%, transparent); color: var(--star); }
+.news-badge svg { width: 26px; height: 26px; fill: currentColor; }
+.news-list { flex: 1 1 auto; min-height: 0; margin: 16px 0; overflow-y: auto; overscroll-behavior: contain; }
+.news-when { margin: 14px 0 6px; color: var(--ink-soft); font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.news-when:first-child { margin-top: 0; }
+.news-items { margin: 0; padding: 0; list-style: none; }
+.news-items li { position: relative; padding: 9px 0 9px 22px; font-size: 15.5px; line-height: 1.4; }
+.news-items li + li { border-top: 1px solid var(--line); }
+.news-items li::before { content: ""; position: absolute; left: 4px; top: 17px; width: 8px; height: 8px; border-radius: 50%; background: var(--live); }

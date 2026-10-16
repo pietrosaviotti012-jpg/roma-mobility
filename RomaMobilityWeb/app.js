@@ -42,8 +42,29 @@ const STORAGE = {
 };
 
 // Cambia a ogni pubblicazione: chi apre l'app dopo un aggiornamento vede cosa c'e' di nuovo.
-const APP_VERSION = "2026.10.12-1";
-const APP_NEWS = "Nel percorso scelto ci sono «Prima» e «Dopo»: scorri la stessa corsa più presto o più tardi, con gli orari dei mezzi.";
+const APP_VERSION = "2026.10.16-2";
+// Novita' di ogni versione, la piu' recente in cima. Dopo un aggiornamento si apre una scheda con quelle
+// delle versioni nuove rispetto all'ultima vista. A ogni pubblicazione: nuova voce in cima + APP_VERSION.
+const APP_CHANGES = [
+  {
+    version: "2026.10.16-2",
+    items: ["Dopo ogni aggiornamento si apre questa scheda con l’elenco delle novità."],
+  },
+  {
+    version: "2026.10.16-1",
+    items: [
+      "L’app si apre molto più in fretta: la mappa compare subito e le fermate arrivano subito dopo.",
+      "Ricerca nuova con 77.000 luoghi di Roma e dintorni: negozi, locali, scuole, ospedali, monumenti, parchi.",
+      "Bastano pezzi di parola («sush», «piazza navon») e puoi cercare per tipo: «farmacia» trova le più vicine.",
+      "Tieni premuto su un punto della mappa: indirizzo, «Indicazioni», «Parti da qui» e «Salva».",
+      "Nella ricerca c’è «Cerca sulla mappa»: sposti la mappa sotto la puntina e scegli il punto.",
+    ],
+  },
+  {
+    version: "2026.10.12-1",
+    items: ["Nel percorso scelto ci sono «Prima» e «Dopo»: la stessa corsa più presto o più tardi."],
+  },
+];
 
 /* ------------------------------------------------------------------ *
  * Utilita'
@@ -411,30 +432,47 @@ function withSearchText(stop) {
   return stop;
 }
 
-async function loadStops() {
-  const read = async (path) => {
-    const response = await fetch(path, { cache: "force-cache" });
-    if (!response.ok) throw new Error("non riesco a leggere " + path + " (HTTP " + response.status + ")");
-    return response.text();
-  };
+// Le fermate arrivano in tre file JSON gia' puliti (ricavati da stops.txt e cotral_stops.txt con
+// strumenti/fermate.js): prima Roma (ATAC e metro, ~140 KB compressi), poi COTRAL e stazioni.
+async function readJson(path) {
+  const response = await fetch(path, { cache: "force-cache" });
+  if (!response.ok) throw new Error("non riesco a leggere " + path + " (HTTP " + response.status + ")");
+  return response.json();
+}
 
-  const [atacText, cotralText, stationsText] = await Promise.all([
-    read("data/stops.txt"),
-    read("data/cotral_stops.txt").catch((error) => {
-      console.warn("cotral_stops.txt non caricato:", error);
-      return "";
-    }),
-    read("data/stazioni.json").catch((error) => {
-      console.warn("stazioni.json non caricato:", error);
-      return "";
-    }),
-  ]);
+function romaStopsFromFile(data) {
+  const atac = data.atac.map(([stopId, code, name, lat, lon]) => ({
+    id: "atac:" + stopId, operator: "ATAC", feed: ATAC_FEED, stopId, code: code || stopId, name,
+    lat: lat / 1e5, lon: lon / 1e5, mode: "Bus", metroLine: "",
+  }));
+  const metro = data.metro.map(([name, line, lat, lon, stopId, children]) => ({
+    id: "metro:" + normalizeText(name) + "|" + line, operator: "ATAC", feed: ATAC_FEED, stopId, code: "Metro " + line, name,
+    lat: lat / 1e5, lon: lon / 1e5, mode: "MetroStation", metroLine: line,
+    children: children.map(([childId, childCode, childLat, childLon, childLine]) => ({
+      id: "atac:" + childId, operator: "ATAC", feed: ATAC_FEED, stopId: childId, code: childCode, name,
+      lat: childLat / 1e5, lon: childLon / 1e5, mode: "Metro", metroLine: childLine,
+    })),
+  }));
+  return atac.concat(metro).map(withSearchText);
+}
 
-  const atac = parseAtacStops(parseCsv(atacText));
-  if (!atac.length) throw new Error("stops.txt non contiene fermate con coordinate valide");
-  const cotral = cotralText ? parseCotralStops(parseCsv(cotralText)) : [];
-  const stations = stationsText ? parseStations(JSON.parse(stationsText)) : [];
-  return atac.concat(cotral, stations).map(withSearchText);
+function cotralStopsFromFile(rows) {
+  return rows.map(([stopId, name, lat, lon]) => withSearchText({
+    id: "cotral:" + stopId, operator: "COTRAL", feed: COTRAL_FEED, stopId, code: stopId, name,
+    lat: lat / 1e5, lon: lon / 1e5, mode: "Cotral", metroLine: "",
+  }));
+}
+
+// Aggiunge fermate a quelle gia' note e ridisegna quello che le mostra.
+function addStops(list) {
+  list.forEach((stop) => {
+    state.stops.push(stop);
+    state.byId.set(stop.id, stop);
+    (stop.children || []).forEach((child) => platformToStation.set(child.stopId, stop));
+  });
+  buildGrid(state.stops);
+  refreshMarkers();
+  if (!$("#view-list").hidden) renderList();
 }
 
 
@@ -2032,10 +2070,32 @@ function showBanner(title, text, actionLabel, action) {
 }
 
 // Chi apre l'app dopo una pubblicazione vede in una riga cosa e' cambiato.
+// Dopo ogni aggiornamento (anche saltando versioni) si apre la scheda con le novita' non ancora viste.
 function announceNewVersion() {
   const seen = readStorage(STORAGE.seenVersion, null);
-  if (seen && seen !== APP_VERSION) showBanner("Roma Mobility è stata aggiornata", APP_NEWS);
   writeStorage(STORAGE.seenVersion, APP_VERSION);
+  if (!seen || seen === APP_VERSION) return;
+  const seenIndex = APP_CHANGES.findIndex((entry) => entry.version === seen);
+  const fresh = APP_CHANGES.slice(0, seenIndex >= 0 ? seenIndex : 3);
+  if (!fresh.length) return;
+  openNews(fresh);
+}
+
+function openNews(entries) {
+  const day = (version) => {
+    const [y, m, d] = version.split("-")[0].split(".").map(Number);
+    return new Intl.DateTimeFormat("it-IT", { day: "numeric", month: "long" }).format(new Date(y, m - 1, d));
+  };
+  $("#news-list").innerHTML = entries.map((entry, index) =>
+    (entries.length > 1 ? '<p class="news-when">' + (index === 0 ? "Questa versione" : "Aggiornamento del " + day(entry.version)) + "</p>" : "") +
+    '<ul class="news-items">' + entry.items.map((item) => "<li>" + escapeHtml(item) + "</li>").join("") + "</ul>").join("");
+  $("#news-sub").textContent = "Versione " + APP_VERSION + " · " + day(APP_VERSION);
+  $("#news-sheet").hidden = false;
+  $("#news-ok").focus({ preventScroll: true });
+}
+
+function closeNews() {
+  $("#news-sheet").hidden = true;
 }
 
 function watchForUpdates() {
@@ -2071,6 +2131,7 @@ function watchForUpdates() {
  * ------------------------------------------------------------------ */
 
 function wireEvents() {
+  $$("[data-news-close]").forEach((element) => element.addEventListener("click", closeNews));
   $$(".tab").forEach((tab) => tab.addEventListener("click", () => showView(tab.dataset.view)));
   $$("[data-close]").forEach((element) => element.addEventListener("click", closeSheet));
   $("#btn-gps").addEventListener("click", () => askPosition(GPS_ZOOM));
@@ -2131,35 +2192,41 @@ function wireEvents() {
 async function boot() {
   applyTheme();
   watchForUpdates();
+  // La mappa compare subito; le fermate arrivano mentre la si guarda (prima Roma, poi COTRAL e treni).
+  state.stops = [];
+  $("#splash").hidden = true;
+  $("#app").hidden = false;
+  $("#tabs").hidden = false;
+
+  initMap();
+  buildWheel();
+  renderSettings();
+  wireEvents();
+  wireNavigation();
+  showView("map");
+  announceNewVersion();
+
+  // A ogni apertura si cerca la posizione: se non e' ancora stata condivisa, e' qui che viene chiesta;
+  // se e' gia' stata data, arriva senza domande.
+  askPosition(GPS_ZOOM, true);
+
   try {
-    state.stops = await loadStops();
-    state.stops.forEach((stop) => {
-      state.byId.set(stop.id, stop);
-      (stop.children || []).forEach((child) => platformToStation.set(child.stopId, stop));
-    });
-    buildGrid(state.stops);
-
-    $("#splash").hidden = true;
-    $("#app").hidden = false;
-    $("#tabs").hidden = false;
-
-    initMap();
-    buildWheel();
-    renderSettings();
-    wireEvents();
-    wireNavigation();
-    showView("map");
-    announceNewVersion();
-
-    // A ogni apertura si cerca la posizione: se non e' ancora stata condivisa, e' qui che viene chiesta;
-    // se e' gia' stata data, arriva senza domande.
-    askPosition(GPS_ZOOM, true);
+    addStops(romaStopsFromFile(await readJson("data/fermate-roma.json")));
   } catch (error) {
-    const box = $("#splash-error");
-    box.hidden = false;
-    box.textContent = "Non riesco a caricare le fermate. Controlla la rete e riapri il sito.";
+    toast("Non riesco a caricare le fermate. Controlla la rete e riapri l’app.");
     console.error(error);
   }
+  const [cotral, stations] = await Promise.all([
+    readJson("data/fermate-cotral.json").then(cotralStopsFromFile).catch((error) => {
+      console.warn("fermate COTRAL non caricate:", error);
+      return [];
+    }),
+    readJson("data/stazioni.json").then((rows) => parseStations(rows).map(withSearchText)).catch((error) => {
+      console.warn("stazioni non caricate:", error);
+      return [];
+    }),
+  ]);
+  addStops(cotral.concat(stations));
 }
 
 
@@ -2547,6 +2614,7 @@ function dedupePlaces(list) {
 
 function placeIcon(place) {
   if (place.here) return { cls: "is-here", svg: ICON.here };
+  if (place.pickMap) return { cls: "is-here", svg: ICON_PICK_MAP };
   if (place.slot === "home") return { cls: "is-fav", svg: ICON_HOME };
   if (place.slot === "work") return { cls: "is-fav", svg: ICON_WORK };
   if (place.trip) return { cls: "is-fav", svg: ICON_ROUTE };
@@ -2555,10 +2623,10 @@ function placeIcon(place) {
   if (place.kind === "address") return { cls: "", svg: ICON_HOME };
   if (place.kind === "street") return { cls: "", svg: ICON_STREET };
   const category = String(place.category || "");
-  if (/restaurant|fast_food|cafe|bar|pub|ice_cream|bakery|food/.test(category)) return { cls: "", svg: ICON_FOOD };
-  if (/pharmacy|hospital|clinic|doctor|dentist/.test(category)) return { cls: "", svg: ICON_HEALTH };
-  if (/school|university|college|kindergarten|library/.test(category)) return { cls: "", svg: ICON_SCHOOL };
-  if (/shop|supermarket|mall|store|marketplace/.test(category)) return { cls: "", svg: ICON_SHOP };
+  if (/restaurant|fast_food|cafe|bar|pub|ice_cream|bakery|food|ristorante|fast food|gelateria|forno|pasticceria/.test(category)) return { cls: "", svg: ICON_FOOD };
+  if (/pharmacy|hospital|clinic|doctor|dentist|farmacia|ospedale|clinica|medico|dentista/.test(category)) return { cls: "", svg: ICON_HEALTH };
+  if (/school|university|college|kindergarten|library|scuola|università|istituto|biblioteca/.test(category)) return { cls: "", svg: ICON_SCHOOL };
+  if (/shop|supermarket|mall|store|marketplace|supermercato|minimarket|abbigliamento|scarpe|centro commerciale|libreria|elettronica|telefonia|ottico|fiorista|arredamento|ferramenta|gioielleria|tabaccheria|edicola|enoteca|giocattoli|mercato/.test(category)) return { cls: "", svg: ICON_SHOP };
   return { cls: "", svg: ICON.pin };
 }
 
@@ -2591,7 +2659,9 @@ function bindPlaceRows(container, groups) {
     row.addEventListener("click", () => {
       const place = groups[row.dataset.group][Number(row.dataset.index)];
       if (!place) return;
-      if (place.trip) {
+      if (place.pickMap) {
+        startMapPick();
+      } else if (place.trip) {
         nav.from = place.trip.from;
         nav.to = place.trip.to;
         showPlan();
@@ -2645,8 +2715,9 @@ function renderSearchHome() {
     trips: saved.trips.map((trip) => ({ trip, name: "Verso " + pointText(trip.to), sub: "Da " + pointText(trip.from) })),
     recent: readRecents(),
     popular: POPULAR_PLACES.slice(0, 8),
+    map: [{ pickMap: true, name: "Cerca sulla mappa", sub: "Sposta la mappa e scegli il punto" }],
   };
-  let html = "";
+  let html = '<ul class="nav-list">' + placeRow(groups.map[0], 0, "map", null) + "</ul>";
 
   if (nav.settingSlot) {
     // Mentre si imposta un preferito si mostrano solo i posti da cui sceglierlo.
@@ -2934,12 +3005,13 @@ function renderFound(local, remote, waiting, official = [], addressFirst = false
   // Con gli indirizzi ufficiali, le vie e i civici di Transitous a Roma sono doppioni meno precisi.
   const remoteOnly = remote.filter((place) => !known.some((other) => normalizeText(other.name) === normalizeText(place.name) && haversineMeters(other, place) < 400) &&
     !(official.length && place.kind === "place" && !place.category && official.some((other) => haversineMeters(other, place) < 1500)));
-  const groups = { local, remote: remoteOnly, official };
+  const groups = { local, remote: remoteOnly, official, map: [{ pickMap: true, name: "Cerca sulla mappa", sub: "Non lo trovi? Sceglilo sulla mappa" }] };
   const section = (title, list, group) => list.length
     ? '<p class="nav-section">' + title + '</p><ul class="nav-list">' + list.map((p, i) => placeRow(p, i, group, nav.settingSlot || p.slot ? null : "star")).join("") + "</ul>"
     : "";
   const addresses = section("Indirizzi", official, "official");
   let html = (addressFirst ? addresses : "") + section("Suggerimenti", local, "local") + section("Luoghi", remoteOnly, "remote") + (addressFirst ? "" : addresses);
+  if (!waiting) html += '<ul class="nav-list nav-list-map">' + placeRow(groups.map[0], 0, "map", null) + "</ul>";
   if (!local.length && !remoteOnly.length && !official.length) {
     html = waiting
       ? '<div class="skeleton trip-skeleton"></div>'
@@ -2974,23 +3046,31 @@ function onSearchInput() {
   geocodeTimer = window.setTimeout(async () => {
     const token = ++geocodeToken;
     let official = [];
+    let mine = [];
     let places = [];
-    // Gli indirizzi ufficiali arrivano prima (file sul sito): si mostrano senza aspettare Transitous.
+    const merged = () => dedupePlaces(mine.concat(places));
+    // Indirizzi ufficiali e luoghi del file arrivano prima (file sul sito): si mostrano senza aspettare Transitous.
     const officialDone = officialAddresses(text)
       .then((list) => {
         official = list;
-        if (token === geocodeToken) renderFound(local, places, true, official, addressFirst);
+        if (token === geocodeToken) renderFound(local, merged(), true, official, addressFirst);
+      })
+      .catch(() => {});
+    const luoghiDone = searchLuoghi(text)
+      .then((list) => {
+        mine = relevant(list);
+        if (token === geocodeToken) renderFound(local, merged(), true, official, addressFirst);
       })
       .catch(() => {});
     try {
       places = relevant(await geocode(text));
-      await officialDone;
+      await Promise.all([officialDone, luoghiDone]);
       if (token !== geocodeToken) return;
-      renderFound(local, places, false, official, addressFirst);
+      renderFound(local, merged(), false, official, addressFirst);
     } catch (error) {
-      await officialDone;
+      await Promise.all([officialDone, luoghiDone]);
       if (token !== geocodeToken) return;
-      if (official.length) renderFound(local, [], false, official, addressFirst);
+      if (official.length || mine.length) renderFound(local, mine, false, official, addressFirst);
       else if (!local.length) body.innerHTML = '<p class="nav-empty">La ricerca non risponde adesso. Controlla la connessione e riprova.</p>';
     } finally {
       if (token === geocodeToken) body.removeAttribute("aria-busy");
@@ -3494,6 +3574,7 @@ function showItinerary(itinerary) {
   closeNavPanel();
   showView("map");
   if (fleet.on) stopFleet();
+  closePointCard();
   $("#nav-open").hidden = true;
   $("#btn-gps").hidden = true;
   $("#btn-fleet").hidden = true;
@@ -3689,6 +3770,7 @@ function wireNavigation() {
 
   wireLive();
   wireFleet();
+  wirePoint();
 }
 
 
@@ -4614,6 +4696,381 @@ async function shiftItinerary(direction, button) {
 
 function isTransitItinerary(itinerary) {
   return itinerary.legs.some(isTransit);
+}
+
+/* ------------------------------------------------------------------ *
+ * Un punto qualsiasi della mappa, come su Google Maps:
+ *  - tenendo premuto sulla mappa cade una puntina e sotto compare una scheda con l'indirizzo
+ *    e "Indicazioni", "Parti da qui", "Salva";
+ *  - "Cerca sulla mappa" nella ricerca: si sposta la mappa sotto la puntina fissa al centro e
+ *    si conferma il punto.
+ * L'indirizzo arriva da Transitous /api/v1/reverse-geocode.
+ * La scheda non oscura la mappa (resta usabile) e si chiude trascinandola giu': segue il dito 1:1
+ * e al rilascio va dove la porta la velocita' (molla senza rimbalzo, come su iOS).
+ * ------------------------------------------------------------------ */
+
+const ICON_MAP_PIN = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6.5-6.2-6.5-11.2a6.5 6.5 0 0 1 13 0C18.5 14.8 12 21 12 21Z"/><circle cx="12" cy="9.8" r="2.4"/></svg>';
+const ICON_PICK_MAP = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3.5 3.5 6v14.5L9 18l6 2.5 5.5-2.5V3.5L15 6Z"/><path d="M9 3.5V18M15 6v14.5"/></svg>';
+
+const point = { place: null, marker: null, token: 0, pickToken: 0, picking: false, pickTimer: null, pickPlace: null };
+
+function areaName(item) {
+  const areas = (item.areas || []).map((area) => area.name).filter(Boolean);
+  const town = areas.filter((name) => !/^Municipio/i.test(name)).pop() || "";
+  return town;
+}
+
+async function reversePlace(lat, lon) {
+  const fallback = { name: "Punto sulla mappa", sub: lat.toFixed(5) + ", " + lon.toFixed(5), lat, lon, kind: "place" };
+  try {
+    const response = await fetch(TRANSITOUS + "/v1/reverse-geocode?place=" + lat.toFixed(6) + "," + lon.toFixed(6) + "&language=it");
+    if (!response.ok) return fallback;
+    const [list, notable] = await Promise.all([response.json(), nearestNotable(lat, lon, 250)]);
+    if ((!Array.isArray(list) || !list.length) && !notable) return fallback;
+    const items = Array.isArray(list) ? list : [];
+    const address = items.find((item) => item.type === "ADDRESS" && haversineMeters({ lat, lon }, item) < 80);
+    const near = items.find((item) => item.type === "PLACE" && item.name && haversineMeters({ lat, lon }, item) < 120);
+    const main = address || near || items[0];
+    const town = main ? areaName(main) : "";
+    const addressName = main ? (main.type === "ADDRESS" && main.houseNumber && main.name.indexOf(main.houseNumber) === -1 ? main.name + " " + main.houseNumber : prettyName(main.name)) : "";
+    // Dentro (o quasi) un monumento, una stazione, un parco: il nome e' quello.
+    if (notable && notable.distance < 60) {
+      return { name: notable.name, sub: [notable.cat ? notable.cat.charAt(0).toUpperCase() + notable.cat.slice(1) : "", address ? addressName : "", town].filter(Boolean).join(" · "), lat, lon, kind: "place" };
+    }
+    const nearby = notable ? notable.name : near && address ? prettyName(near.name) : "";
+    const sub = [nearby ? "vicino a " + nearby : "", town].filter(Boolean).join(" · ");
+    return { name: addressName || "Punto sulla mappa", sub: sub || town, lat, lon, kind: "place" };
+  } catch (error) {
+    return fallback;
+  }
+}
+
+/* ---------------- puntina e scheda dopo la pressione lunga ---------------- */
+
+function dropPin(lat, lon) {
+  if (point.marker) point.marker.remove();
+  const icon = L.divIcon({ className: "drop-pin", html: '<span class="drop-pin-body">' + ICON_MAP_PIN + "</span>", iconSize: [36, 44], iconAnchor: [18, 42] });
+  point.marker = L.marker([lat, lon], { icon, keyboard: false, interactive: false, zIndexOffset: 900 }).addTo(map);
+}
+
+async function openPointCard(lat, lon) {
+  const token = ++point.token;
+  dropPin(lat, lon);
+  point.place = { name: "Punto sulla mappa", sub: "", lat, lon, kind: "place" };
+  const card = $("#point-card");
+  card.hidden = false;
+  card.style.transform = "";
+  $("#point-title").textContent = "Cerco l’indirizzo…";
+  $("#point-sub").textContent = state.position ? metersLabel(haversineMeters(state.position, { lat, lon })) + " da te" : "";
+  $("#point-title").classList.add("is-loading");
+  updatePointSave();
+  const place = await reversePlace(lat, lon);
+  if (token !== point.token) return;
+  point.place = place;
+  $("#point-title").classList.remove("is-loading");
+  $("#point-title").textContent = place.name;
+  $("#point-sub").textContent = [state.position ? metersLabel(haversineMeters(state.position, place)) + " da te" : "", place.sub].filter(Boolean).join(" · ");
+  updatePointSave();
+}
+
+function closePointCard() {
+  point.token += 1;
+  $("#point-card").hidden = true;
+  if (point.marker) point.marker.remove();
+  point.marker = null;
+  point.place = null;
+}
+
+function updatePointSave() {
+  const button = $("#point-save");
+  const on = Boolean(point.place && point.place.name !== "Punto sulla mappa" && isSavedPlace(point.place));
+  button.classList.toggle("is-on", on);
+  button.setAttribute("aria-pressed", String(on));
+  $("#point-save-label").textContent = on ? "Salvato" : "Salva";
+}
+
+// Molla criticamente smorzata (nessun rimbalzo), parte dal valore e dalla velocita' attuali.
+function springTo(element, from, to, velocity, done) {
+  const response = 0.32; // secondi, come i fogli di iOS
+  const omega = (2 * Math.PI) / response;
+  let x = from - to;
+  let v = velocity;
+  let last = performance.now();
+  const step = (now) => {
+    const dt = Math.min(0.032, (now - last) / 1000);
+    last = now;
+    // Integrazione semplice di x'' = -omega^2 x - 2 omega x'  (smorzamento critico)
+    const a = -omega * omega * x - 2 * omega * v;
+    v += a * dt;
+    x += v * dt;
+    if (Math.abs(x) < 0.5 && Math.abs(v) < 5) {
+      element.style.transform = to ? "translateY(" + to + "px)" : "";
+      if (done) done();
+      return;
+    }
+    element.style.transform = "translateY(" + (to + x) + "px)";
+    element._spring = requestAnimationFrame(step);
+  };
+  cancelAnimationFrame(element._spring);
+  element._spring = requestAnimationFrame(step);
+}
+
+function wireCardDrag(card) {
+  let start = null;
+  let history = [];
+  let offset = 0;
+  card.addEventListener("pointerdown", (event) => {
+    if (event.target.closest("button")) return;
+    cancelAnimationFrame(card._spring);
+    // Si riparte da dove si trova la scheda adesso (anche se stava ancora tornando su).
+    const match = /translateY\((-?[\d.]+)px\)/.exec(card.style.transform || "");
+    offset = match ? Number(match[1]) : 0;
+    start = event.clientY - offset;
+    history = [{ y: event.clientY, t: event.timeStamp }];
+    card.setPointerCapture(event.pointerId);
+  });
+  card.addEventListener("pointermove", (event) => {
+    if (start === null) return;
+    let y = event.clientY - start;
+    // Verso l'alto resiste (non c'e' niente oltre), verso il basso segue il dito.
+    if (y < 0) y = -((-y * 60 * 0.55) / (60 + 0.55 * -y));
+    offset = y;
+    card.style.transform = "translateY(" + y + "px)";
+    history.push({ y: event.clientY, t: event.timeStamp });
+    if (history.length > 5) history.shift();
+  });
+  const release = () => {
+    if (start === null) return;
+    start = null;
+    const first = history[0];
+    const last = history[history.length - 1];
+    const velocity = last && first && last.t > first.t ? ((last.y - first.y) / (last.t - first.t)) * 1000 : 0;
+    // Dove arriverebbe col suo slancio (stessa proiezione dello scorrimento di iOS).
+    const projected = offset + (velocity / 1000) * 0.998 / (1 - 0.998);
+    const height = card.offsetHeight;
+    if (projected > height * 0.5) {
+      springTo(card, offset, height + 40, velocity, () => {
+        closePointCard();
+        closeMapPick(false);
+      });
+    } else {
+      springTo(card, offset, 0, velocity);
+    }
+  };
+  card.addEventListener("pointerup", release);
+  card.addEventListener("pointercancel", release);
+}
+
+/* ---------------- "Cerca sulla mappa" ---------------- */
+
+function startMapPick() {
+  point.picking = true;
+  closeNavPanel();
+  closePointCard();
+  showView("map");
+  $("#view-map").classList.add("is-picking");
+  $("#pick-bar").hidden = false;
+  $("#pick-card").hidden = false;
+  $("#pick-title").textContent = "Sposta la mappa sul punto";
+  $("#pick-sub").textContent = "";
+  $("#pick-confirm").disabled = true;
+  $("#pick-mode").textContent = nav.settingSlot === "home" ? "Scegli dov’è casa" : nav.settingSlot === "work" ? "Scegli dov’è il lavoro" : nav.picking === "from" ? "Scegli da dove parti" : "Scegli dove vuoi andare";
+  updatePickPlace();
+}
+
+function updatePickPlace() {
+  if (!point.picking) return;
+  window.clearTimeout(point.pickTimer);
+  $("#pick-confirm").disabled = true;
+  $("#pick-title").textContent = "Cerco l’indirizzo…";
+  point.pickTimer = window.setTimeout(async () => {
+    const token = ++point.pickToken;
+    const center = map.getCenter();
+    const place = await reversePlace(center.lat, center.lng);
+    if (token !== point.pickToken || !point.picking) return;
+    point.pickPlace = place;
+    $("#pick-title").textContent = place.name;
+    $("#pick-sub").textContent = place.sub;
+    $("#pick-confirm").disabled = false;
+  }, 350);
+}
+
+function closeMapPick(backToSearch) {
+  if (!point.picking) return;
+  point.picking = false;
+  point.pickToken += 1;
+  $("#view-map").classList.remove("is-picking");
+  $("#pick-bar").hidden = true;
+  $("#pick-card").hidden = true;
+  if (backToSearch) startSearch(nav.picking, nav.returnTo);
+}
+
+function wirePoint() {
+  // Pressione lunga (su iPhone Leaflet la trasforma in "contextmenu"), clic destro sul computer.
+  map.on("contextmenu", (event) => {
+    if (point.picking || nav.shown || live.on || fleet.on) return;
+    openPointCard(event.latlng.lat, event.latlng.lng);
+  });
+  // Un tocco altrove sulla mappa chiude la scheda.
+  map.on("click", () => {
+    if (!$("#point-card").hidden) closePointCard();
+  });
+  map.on("moveend", () => {
+    if (point.picking) updatePickPlace();
+  });
+  wireCardDrag($("#point-card"));
+
+  $("#point-close").addEventListener("click", closePointCard);
+  $("#point-go").addEventListener("click", () => {
+    if (!point.place) return;
+    const place = cleanPoint(point.place);
+    closePointCard();
+    nav.from = { here: true };
+    nav.to = place;
+    nav.returnTo = null;
+    showPlan();
+  });
+  $("#point-from").addEventListener("click", () => {
+    if (!point.place) return;
+    const place = cleanPoint(point.place);
+    closePointCard();
+    nav.from = place;
+    nav.to = null;
+    startSearch("to", "plan");
+  });
+  $("#point-save").addEventListener("click", () => {
+    if (!point.place || point.place.name === "Punto sulla mappa") return;
+    const on = toggleSavedPlace(point.place);
+    updatePointSave();
+    toast(on ? "Salvato nei preferiti: lo trovi in «Dove vuoi andare?»." : "Tolto dai preferiti.");
+  });
+
+  $("#pick-cancel").addEventListener("click", () => closeMapPick(true));
+  $("#pick-confirm").addEventListener("click", () => {
+    const place = point.pickPlace;
+    if (!place) return;
+    closeMapPick(false);
+    choosePlace(place);
+  });
+}
+
+/* ------------------------------------------------------------------ *
+ * Luoghi di Roma e dintorni, dal file OpenStreetMap preparato con strumenti/luoghi.py:
+ * 75.000 negozi, locali, scuole, monumenti, parchi, quartieri e le vie dei comuni intorno
+ * (quelle di Roma arrivano dai civici ANNCSU). data/luoghi/luoghi-<xy>.json contiene i luoghi con una
+ * parola che comincia per "xy": per una ricerca si scarica un solo file piccolo, poi resta in copia.
+ * Righe: [nome, tipo in italiano, lat*1e5, lon*1e5, indirizzo, comune]. (c) OpenStreetMap, ODbL.
+ * ------------------------------------------------------------------ */
+
+const LUOGHI_URL = "data/luoghi/";
+const LUOGHI_STOP = new Set(["via", "viale", "piazza", "piazzale", "largo", "corso", "vicolo", "lungotevere", "di", "del", "della",
+  "dello", "dei", "degli", "delle", "de", "da", "dal", "la", "il", "lo", "le", "gli", "i", "e", "ed", "a", "al", "in", "the", "and"]);
+const luoghiFiles = new Map();
+// A parita' di nome vince il luogo piu' importante: "Colosseo" e' il monumento, non il bar o il belvedere.
+const LUOGHI_PESO = {
+  attrazione: 3, "sito archeologico": 2.5, monumento: 2, museo: 2, stazione: 2, aeroporto: 2, stadio: 2, castello: 2,
+  "università": 1.6, ospedale: 1.6, parco: 1.5, fontana: 1.5, porta: 1.5, teatro: 1.4, "centro commerciale": 1.4, quartiere: 1.3, paese: 1.6,
+};
+let notevoli = null;
+
+function luoghiKey(word) {
+  if (/^\d/.test(word)) return "0";
+  return /^[a-z]{2}/.test(word) ? word.slice(0, 2) : null;
+}
+
+function loadLuoghi(key) {
+  if (!luoghiFiles.has(key)) {
+    luoghiFiles.set(key, fetch(LUOGHI_URL + "luoghi-" + key + ".json")
+      .then((response) => (response.ok ? response.json() : []))
+      .then((rows) => rows.map(([name, cat, lat, lon, address, town]) => ({
+        name, cat, address, town, lat: lat / 1e5, lon: lon / 1e5,
+        n: normalizeText(name),
+        // Si cerca anche per tipo ("farmacia") e per comune ("tivoli villa d este").
+        h: normalizeText(name + " " + (cat === "via" ? "" : cat) + " " + (town || "")),
+      })))
+      .catch((error) => {
+        luoghiFiles.delete(key);
+        throw error;
+      }));
+  }
+  return luoghiFiles.get(key);
+}
+
+// Parole scritte anche a meta' ("sush", "piazza navon"), in qualsiasi ordine; anche per tipo ("farmacia").
+async function searchLuoghi(text) {
+  const words = normalizeText(text).split(" ").filter(Boolean);
+  const strong = words.filter((word) => word.length >= 2 && !LUOGHI_STOP.has(word));
+  if (!strong.length || strong.join("").length < 3) return [];
+  const near = referencePoint();
+  const phrase = words.join(" ");
+  const found = [];
+  // Si parte dal file della parola piu' lunga; se li' non c'e' niente (la parola era il comune, come
+  // "tivoli" in "tivoli villa d este") si prova con le altre.
+  const keys = [...new Set(strong.slice().sort((x, y) => y.length - x.length).map(luoghiKey).filter(Boolean))].slice(0, 3);
+  for (const key of keys) {
+    const rows = await loadLuoghi(key);
+    scoreLuoghi(rows, words, phrase, near, found);
+    if (found.length) break;
+  }
+  found.sort((x, y) => y.score - x.score);
+  return found.slice(0, 8).map(luogoPlace);
+}
+
+function scoreLuoghi(rows, words, phrase, near, found) {
+  rows.forEach((row) => {
+    if (!matchesWords(row.h, words)) return;
+    const nameWords = row.n.split(" ");
+    let score = 0;
+    if (row.n === phrase) score += 6;
+    else if (row.n.startsWith(phrase)) score += 4;
+    score += words.filter((word) => nameWords.includes(word)).length * 1.5;
+    // Trovato solo per il tipo ("farmacia" su "Farmacia Rossi" no, su "Rossi" si'): conta la vicinanza.
+    if (!words.some((word) => nameWords.some((candidate) => candidate.startsWith(word)))) score -= 1.5;
+    score -= Math.log2(1 + haversineMeters(near, row) / 1000) * 1.6;
+    score += (LUOGHI_PESO[row.cat] || 1) - 1;
+    found.push({ row, score });
+  });
+}
+
+function luogoPlace({ row }) {
+  {
+    const label = row.cat && row.cat !== "via" ? row.cat.charAt(0).toUpperCase() + row.cat.slice(1) : "";
+    const where = [row.address, row.town].filter(Boolean).join(", ");
+    return {
+      name: row.name,
+      sub: distanceNote(row) + [label, where].filter(Boolean).join(" · "),
+      lat: row.lat,
+      lon: row.lon,
+      kind: row.cat === "via" ? "street" : "place",
+      category: row.cat,
+    };
+  }
+}
+
+// Il luogo notevole piu' vicino (monumento, museo, stazione, parco...) per la pressione lunga.
+async function nearestNotable(lat, lon, radius) {
+  if (!notevoli) {
+    notevoli = fetch(LUOGHI_URL + "notevoli.json")
+      .then((response) => (response.ok ? response.json() : []))
+      .then((rows) => rows.map(([name, cat, rowLat, rowLon]) => ({ name, cat, lat: rowLat / 1e5, lon: rowLon / 1e5 })))
+      .catch(() => {
+        notevoli = null;
+        return [];
+      });
+  }
+  const list = await notevoli;
+  let best = null;
+  let bestDistance = radius;
+  list.forEach((item) => {
+    if (Math.abs(item.lat - lat) > 0.01 || Math.abs(item.lon - lon) > 0.014) return;
+    // Distanza "pesata": il Colosseo a 80 m conta piu' di una targa a 40 m.
+    const distance = haversineMeters({ lat, lon }, item) / (LUOGHI_PESO[item.cat] || 1);
+    if (distance < bestDistance) {
+      best = item;
+      bestDistance = distance;
+    }
+  });
+  return best ? Object.assign({ distance: bestDistance }, best) : null;
 }
 
 boot();

@@ -66,6 +66,51 @@
         </button>
         <p id="map-hint" class="map-hint">Avvicina la mappa per vedere le fermate</p>
 
+        <!-- Punto tenuto premuto sulla mappa: scheda in basso, la mappa resta usabile -->
+        <section id="point-card" class="point-card" aria-labelledby="point-title" hidden>
+          <div class="sheet-grab" aria-hidden="true"></div>
+          <div class="point-head">
+            <span class="point-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 21s-6.5-6.2-6.5-11.2a6.5 6.5 0 0 1 13 0C18.5 14.8 12 21 12 21Z"/><circle cx="12" cy="9.8" r="2.4"/></svg></span>
+            <div class="point-text">
+              <h2 id="point-title"></h2>
+              <p id="point-sub"></p>
+            </div>
+            <button id="point-close" type="button" class="icon-button" aria-label="Chiudi">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" /></svg>
+            </button>
+          </div>
+          <div class="point-actions">
+            <button id="point-go" type="button" class="point-btn is-primary">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19c0-6 4-8 9-8h5" /><polyline points="15 7 19 11 15 15" /></svg>
+              Indicazioni
+            </button>
+            <button id="point-from" type="button" class="point-btn">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.5" /><circle cx="12" cy="12" r="8" /></svg>
+              Parti da qui
+            </button>
+            <button id="point-save" type="button" class="point-btn" aria-pressed="false">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3.6 2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.8l5.9-.9Z" /></svg>
+              <span id="point-save-label">Salva</span>
+            </button>
+          </div>
+        </section>
+
+        <!-- Cerca sulla mappa: puntina fissa al centro, si sposta la mappa -->
+        <div id="pick-bar" class="pick-bar" hidden>
+          <p id="pick-mode">Scegli dove vuoi andare</p>
+          <button id="pick-cancel" type="button" class="text-button">Annulla</button>
+        </div>
+        <div class="pick-pin" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 21s-6.5-6.2-6.5-11.2a6.5 6.5 0 0 1 13 0C18.5 14.8 12 21 12 21Z"/><circle cx="12" cy="9.8" r="2.4"/></svg></div>
+        <section id="pick-card" class="point-card pick-card" aria-live="polite" hidden>
+          <div class="point-head">
+            <div class="point-text">
+              <h2 id="pick-title"></h2>
+              <p id="pick-sub"></p>
+            </div>
+          </div>
+          <button id="pick-confirm" type="button" class="primary" disabled>Scegli questo punto</button>
+        </section>
+
         <!-- Mezzi in tempo reale: la mappa diventa una schermata a parte con i soli mezzi -->
         <div id="fleet-bar" class="fleet-bar" hidden>
           <div class="fleet-head">
@@ -265,6 +310,7 @@
         <p class="credit">Fatto da Pietro Saviotti con i dati aperti di ATAC, COTRAL e Transitland.</p>
         <p class="credit">Numeri civici di Roma dall’<a href="https://www.anncsu.gov.it/it/consultazione-dellarchivio/open-data/" target="_blank" rel="noopener">archivio nazionale ANNCSU</a> (Agenzia delle Entrate e Istat, licenza CC BY 4.0).</p>
         <p class="credit">Tempo reale COTRAL: <a href="https://busone.app" target="_blank" rel="noopener">BusOne</a> e COTRAL S.p.A. / Regione Lazio.</p>
+        <p class="credit">Luoghi, negozi e vie dei dintorni: © contributori di <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> (ODbL).</p>
         <p class="credit">Percorsi calcolati con <a href="https://transitous.org/sources/" target="_blank" rel="noopener">Transitous</a> e mappe di OpenStreetMap.</p>
         <p class="credit">Codice aperto (licenza MIT) e contatti: <a href="https://github.com/pietrosaviotti012-jpg/roma-mobility" target="_blank" rel="noopener">github.com/pietrosaviotti012-jpg/roma-mobility</a></p>
         <p class="credit" id="app-version"></p>
@@ -297,6 +343,25 @@
     </nav>
 
     <!-- SCHEDA DELLA FERMATA: partenze, e toccando una corsa le sue fermate successive -->
+    <!-- Novita' dopo un aggiornamento -->
+    <div id="news-sheet" class="sheet news-sheet" hidden>
+      <div class="sheet-backdrop" data-news-close></div>
+      <div class="sheet-body news-body" role="dialog" aria-modal="true" aria-labelledby="news-title">
+        <div class="sheet-grab" aria-hidden="true"></div>
+        <div class="news-head">
+          <span class="news-badge" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M12 3.5 14.2 9l5.8.4-4.4 3.8 1.4 5.7L12 15.8 7 18.9l1.4-5.7L4 9.4 9.8 9Z" /></svg>
+          </span>
+          <div>
+            <h2 id="news-title">Novità</h2>
+            <p id="news-sub"></p>
+          </div>
+        </div>
+        <div id="news-list" class="news-list"></div>
+        <button id="news-ok" type="button" class="primary" data-news-close>Ho capito</button>
+      </div>
+    </div>
+
     <div id="sheet-stop" class="sheet" hidden>
       <div class="sheet-backdrop" data-close></div>
       <div class="sheet-body" role="dialog" aria-modal="true" aria-labelledby="sheet-title">

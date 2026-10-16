@@ -8,7 +8,7 @@
  * Gli orari (/api/) e le tessere della mappa non vengono mai salvati: devono essere freschi.
  */
 
-const CACHE_VERSION = "roma-mobility-v30";
+const CACHE_VERSION = "roma-mobility-v32";
 const SHELL = [
   "./",
   "index.html",
@@ -20,8 +20,9 @@ const SHELL = [
   "icons/logo-dark.png",
   "icons/icon-512.png",
   "icons/apple-touch-icon.png",
-  "data/stops.txt",
-  "data/cotral_stops.txt",
+  "data/fermate-roma.json",
+  "data/fermate-cotral.json",
+  "data/stazioni.json",
 ];
 
 self.addEventListener("install", (event) => {
